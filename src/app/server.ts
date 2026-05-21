@@ -4,6 +4,7 @@ import { connectDatabase, disconnectDatabase } from '../database/prisma';
 import { connectRedis, disconnectRedis } from '../cache/redis';
 import healthRoutes from '../modules/health/health.route';
 import domainRoutes from '../modules/domains/domains.route';
+import servicesRoutes from '../modules/services/services.route';
 
 const app = Fastify({
   logger: true,
@@ -14,6 +15,10 @@ app.register(healthRoutes, {
 });
 
 app.register(domainRoutes, {
+  prefix: '/api',
+});
+
+app.register(servicesRoutes, {
   prefix: '/api',
 });
 
