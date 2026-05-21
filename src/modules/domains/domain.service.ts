@@ -1,5 +1,6 @@
 import { PaginationOptions } from '../../shared/types';
 import DomainRepository from './domains.repository';
+import { CreateDomainDTO } from './domains.types';
 
 export default class DomainService {
 	private repository: DomainRepository;
@@ -22,7 +23,8 @@ export default class DomainService {
 		return this.repository.findByHost(host);
 	}
 
-	async createDomain(host: string, applicationId: string) {
+	async createDomain(data: CreateDomainDTO) {
+		const { host, applicationId } = data;
 		if (!host || !applicationId) {
 			throw new Error('host and applicationId are required');
 		}

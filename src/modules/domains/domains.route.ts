@@ -1,19 +1,7 @@
 import { FastifyPluginAsync, FastifyReply, FastifyRequest } from 'fastify';
 import DomainService from './domain.service';
 import { PaginationOptions } from '../../shared/types';
-
-type CreateDomainBody = {
-  host: string;
-  applicationId: string;
-};
-
-type DomainByHostParams = {
-  host: string;
-};
-
-type DomainByIdParams = {
-  id: string;
-};
+import { CreateDomainDTO, DomainByHostParams, DomainByIdParams } from './domains.types';
 
 const domainRoutes: FastifyPluginAsync = async (fastify) => {
   const service = new DomainService();
@@ -43,12 +31,11 @@ const domainRoutes: FastifyPluginAsync = async (fastify) => {
   fastify.post(
     '/domains',
     async (
-      request: FastifyRequest<{ Body: CreateDomainBody }>,
+      request: FastifyRequest<{ Body: CreateDomainDTO }>,
       reply: FastifyReply
     ) => {
       try {
-        const { host, applicationId } = request.body;
-        const domain = await service.createDomain(host, applicationId);
+        const domain = await service.createDomain(request.body);
         return reply.status(201).send(domain);
       } catch (error) {
         return reply.status(400).send({ message: (error as Error).message });
