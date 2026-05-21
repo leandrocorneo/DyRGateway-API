@@ -6,6 +6,8 @@ import healthRoutes from '../modules/health/health.route';
 import domainRoutes from '../modules/domains/domains.route';
 import servicesRoutes from '../modules/services/services.route';
 import applicationsRoutes from '../modules/applications/applications.route';
+import gatewayRoutes from '../modules/gateway/gateway.route';
+import gatewayProxyRoutes from '../modules/gateway/proxy/proxy.route';
 
 const app = Fastify({
   logger: true,
@@ -26,6 +28,12 @@ app.register(servicesRoutes, {
 app.register(applicationsRoutes, {
   prefix: '/api',
 });
+
+app.register(gatewayRoutes, {
+  prefix: '/api',
+});
+
+app.register(gatewayProxyRoutes);
 
 const gracefulShutdown = async (signal: string) => {
   await app.close();
