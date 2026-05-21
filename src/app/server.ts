@@ -5,6 +5,7 @@ import { connectRedis, disconnectRedis } from '../cache/redis';
 import healthRoutes from '../modules/health/health.route';
 import domainRoutes from '../modules/domains/domains.route';
 import servicesRoutes from '../modules/services/services.route';
+import applicationsRoutes from '../modules/applications/applications.route';
 
 const app = Fastify({
   logger: true,
@@ -19,6 +20,10 @@ app.register(domainRoutes, {
 });
 
 app.register(servicesRoutes, {
+  prefix: '/api',
+});
+
+app.register(applicationsRoutes, {
   prefix: '/api',
 });
 
