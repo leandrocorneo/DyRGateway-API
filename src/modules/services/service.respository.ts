@@ -1,6 +1,6 @@
 import { prisma } from '../../database/prisma';
 import { PaginationOptions } from '../../shared/types';
-import { CreateServiceDTO } from './services.types';
+import { CreateServiceDTO, UpdateServiceDTO } from './services.types';
 
 export default class ServiceRepository {
     async listServices(paginationOpts?: PaginationOptions) {
@@ -28,6 +28,13 @@ export default class ServiceRepository {
                 targetPort,
                 active,
             }
+        });
+    }
+
+    async updateService(id: string, data: UpdateServiceDTO) {
+        return prisma.service.update({
+            where: { id },
+            data,
         });
     }
 

@@ -1,6 +1,6 @@
 import { prisma } from '../../database/prisma';
 import { PaginationOptions } from '../../shared/types';
-import { CreateApplicationDTO } from './applications.types';
+import { CreateApplicationDTO, UpdateApplicationDTO } from './applications.types';
 
 export default class ApplicationRepository {
   async listApplications(paginationOpts?: PaginationOptions) {
@@ -24,6 +24,13 @@ export default class ApplicationRepository {
         slug: data.slug,
         active: data.active ?? true,
       },
+    });
+  }
+
+  async updateById(id: string, data: UpdateApplicationDTO) {
+    return prisma.application.update({
+      where: { id },
+      data,
     });
   }
 

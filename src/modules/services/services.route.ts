@@ -1,6 +1,7 @@
 import { FastifyPluginAsync, FastifyReply, FastifyRequest } from 'fastify';
+import { Prisma } from '@prisma/client';
 import ServicesService from './services.service';
-import { CreateServiceDTO } from './services.types';
+import { CreateServiceDTO, UpdateServiceDTO } from './services.types';
 import { PaginationOptions } from '../../shared/types';
 
 const serviceRoutes: FastifyPluginAsync = async (fastify) => {
@@ -32,6 +33,25 @@ const serviceRoutes: FastifyPluginAsync = async (fastify) => {
                 const service = await servicesService.createService(request.body);
                 return reply.status(201).send(service);
             } catch (error) {
+                return reply.status(400).send({ message: (error as Error).message });
+            }
+        }
+    );
+
+    fastify.put(
+        '/services/:id',
+        async (
+            request: FastifyRequest<{ Params: { id: string }; Body: UpdateServiceDTO }>,
+            reply: FastifyReply
+        ) => {
+            try {
+                const service = await servicesService.updateService(request.params.id, request.body);
+                return reply.send(service);
+            } catch (error) {
+                if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025') {
+                    return reply.status(404).send({ message: 'Service not found' });
+                }
+
                 return reply.status(400).send({ message: (error as Error).message });
             }
         }

@@ -3,6 +3,11 @@ export type CreateDomainDTO = {
 	applicationId: string;
 };
 
+export type UpdateDomainDTO = {
+	host?: string;
+	applicationId?: string;
+};
+
 export type DomainByHostParams = {
 	host: string;
 };

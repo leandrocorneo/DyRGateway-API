@@ -1,6 +1,6 @@
 import { PaginationOptions } from '../../shared/types';
 import ApplicationRepository from './applications.repository';
-import { CreateApplicationDTO } from './applications.types';
+import { CreateApplicationDTO, UpdateApplicationDTO } from './applications.types';
 
 export default class ApplicationsService {
   private readonly repository: ApplicationRepository;
@@ -24,15 +24,51 @@ export default class ApplicationsService {
   }
 
   async createApplication(data: CreateApplicationDTO) {
-    if (!data.name) {
+    const name = data.name?.trim();
+    if (!name) {
       throw new Error('name is required');
     }
 
-    const slug = data.slug || this.slugify(data.name);
+    const slug = data.slug ? this.slugify(data.slug) : this.slugify(name);
     return this.repository.createApplication({
       ...data,
+      name,
       slug,
     });
+  }
+
+  async updateApplication(id: string, data: UpdateApplicationDTO) {
+    if (!id) {
+      throw new Error('id is required');
+    }
+
+    const updateData: UpdateApplicationDTO = {};
+
+    if (data.name !== undefined) {
+      const name = data.name.trim();
+      if (!name) {
+        throw new Error('name cannot be empty');
+      }
+      updateData.name = name;
+    }
+
+    if (data.slug !== undefined) {
+      const slug = this.slugify(data.slug);
+      if (!slug) {
+        throw new Error('slug is invalid');
+      }
+      updateData.slug = slug;
+    }
+
+    if (data.active !== undefined) {
+      updateData.active = data.active;
+    }
+
+    if (Object.keys(updateData).length === 0) {
+      throw new Error('at least one field is required to update');
+    }
+
+    return this.repository.updateById(id, updateData);
   }
 
   async deleteApplication(id: string) {

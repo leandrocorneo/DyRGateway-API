@@ -1,6 +1,7 @@
 import { FastifyPluginAsync, FastifyReply, FastifyRequest } from 'fastify';
+import { Prisma } from '@prisma/client';
 import ApplicationsService from './applications.service';
-import { CreateApplicationDTO, ApplicationByIdParams } from './applications.types';
+import { CreateApplicationDTO, ApplicationByIdParams, UpdateApplicationDTO } from './applications.types';
 import { PaginationOptions } from '../../shared/types';
 
 const applicationRoutes: FastifyPluginAsync = async (fastify) => {
@@ -35,6 +36,25 @@ const applicationRoutes: FastifyPluginAsync = async (fastify) => {
         const application = await service.createApplication(request.body);
         return reply.status(201).send(application);
       } catch (error) {
+        return reply.status(400).send({ message: (error as Error).message });
+      }
+    }
+  );
+
+  fastify.put(
+    '/applications/:id',
+    async (
+      request: FastifyRequest<{ Params: ApplicationByIdParams; Body: UpdateApplicationDTO }>,
+      reply: FastifyReply
+    ) => {
+      try {
+        const application = await service.updateApplication(request.params.id, request.body);
+        return reply.send(application);
+      } catch (error) {
+        if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025') {
+          return reply.status(404).send({ message: 'Application not found' });
+        }
+
         return reply.status(400).send({ message: (error as Error).message });
       }
     }

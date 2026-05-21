@@ -1,6 +1,6 @@
 import { PaginationOptions } from '../../shared/types';
 import ServiceRepository from './service.respository';
-import { CreateServiceDTO } from './services.types';
+import { CreateServiceDTO, UpdateServiceDTO } from './services.types';
 
 export default class ServicesService {
 
@@ -32,6 +32,86 @@ export default class ServicesService {
     }
 
     async createService(data: CreateServiceDTO) {
-        return this.repository.createService(data);
+        const applicationId = data.applicationId?.trim();
+        const type = data.type?.trim();
+        const targetHost = data.targetHost?.trim();
+
+        if (!applicationId || !type || !data.path || !targetHost) {
+            throw new Error('applicationId, type, path and targetHost are required');
+        }
+
+        if (!Number.isInteger(data.targetPort) || data.targetPort <= 0) {
+            throw new Error('targetPort must be a positive integer');
+        }
+
+        return this.repository.createService({
+            ...data,
+            applicationId,
+            type: type.toLowerCase(),
+            path: this.normalizePath(data.path),
+            targetHost,
+        });
+    }
+
+    async updateService(id: string, data: UpdateServiceDTO) {
+        if (!id) {
+            throw new Error('id is required');
+        }
+
+        const updateData: UpdateServiceDTO = {};
+
+        if (data.applicationId !== undefined) {
+            const applicationId = data.applicationId.trim();
+            if (!applicationId) {
+                throw new Error('applicationId cannot be empty');
+            }
+            updateData.applicationId = applicationId;
+        }
+
+        if (data.type !== undefined) {
+            const type = data.type.trim().toLowerCase();
+            if (!type) {
+                throw new Error('type cannot be empty');
+            }
+            updateData.type = type;
+        }
+
+        if (data.path !== undefined) {
+            updateData.path = this.normalizePath(data.path);
+        }
+
+        if (data.targetHost !== undefined) {
+            const targetHost = data.targetHost.trim();
+            if (!targetHost) {
+                throw new Error('targetHost cannot be empty');
+            }
+            updateData.targetHost = targetHost;
+        }
+
+        if (data.targetPort !== undefined) {
+            if (!Number.isInteger(data.targetPort) || data.targetPort <= 0) {
+                throw new Error('targetPort must be a positive integer');
+            }
+            updateData.targetPort = data.targetPort;
+        }
+
+        if (data.active !== undefined) {
+            updateData.active = data.active;
+        }
+
+        if (Object.keys(updateData).length === 0) {
+            throw new Error('at least one field is required to update');
+        }
+
+        return this.repository.updateService(id, updateData);
+    }
+
+    private normalizePath(path: string) {
+        const trimmedPath = path.trim();
+        if (!trimmedPath) {
+            throw new Error('path cannot be empty');
+        }
+
+        return trimmedPath.startsWith('/') ? trimmedPath : `/${trimmedPath}`;
     }
  }
