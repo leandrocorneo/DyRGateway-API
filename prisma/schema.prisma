@@ -1,0 +1,49 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Application {
+  id        String   @id @default(uuid())
+  name      String
+  slug      String   @unique
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  domains   Domain[]
+  services  Service[]
+
+  @@map("applications")
+}
+
+model Domain {
+  id            String      @id @default(uuid())
+  host          String      @unique
+  applicationId String
+  createdAt     DateTime    @default(now())
+
+  application   Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+
+  @@index([applicationId])
+  @@map("domains")
+}
+
+model Service {
+  id            String      @id @default(uuid())
+  applicationId String
+  type          String      // e.g., 'http', 'websocket'
+  path          String      // e.g., '/api', '/'
+  targetHost    String
+  targetPort    Int
+  active        Boolean     @default(true)
+  createdAt     DateTime    @default(now())
+
+  application   Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+
+  @@index([applicationId])
+  @@map("services")
+}

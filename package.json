@@ -1,0 +1,27 @@
+{
+  "name": "dyr-gateway",
+  "version": "1.0.0",
+  "description": "Dynamic reverse gateway system",
+  "main": "src/app/server.ts",
+  "scripts": {
+    "dev": "tsx watch src/app/server.ts",
+    "build": "tsc",
+    "start": "node dist/app/server.js",
+    "prisma:generate": "prisma generate",
+    "prisma:migrate": "prisma migrate dev"
+  },
+  "dependencies": {
+    "@prisma/client": "^5.0.0",
+    "fastify": "^4.24.3",
+    "ioredis": "^5.3.2",
+    "http-proxy": "^1.18.1",
+    "dotenv": "^16.3.1"
+  },
+  "devDependencies": {
+    "typescript": "^5.2.2",
+    "@types/node": "^20.8.7",
+    "@types/http-proxy": "^1.17.13",
+    "tsx": "^3.14.0",
+    "prisma": "^5.4.2"
+  }
+}
