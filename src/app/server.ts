@@ -3,12 +3,17 @@ import { config } from '../config/env';
 import { connectDatabase, disconnectDatabase } from '../database/prisma';
 import { connectRedis, disconnectRedis } from '../cache/redis';
 import healthRoutes from '../modules/health/health.route';
+import domainRoutes from '../modules/domains/domains.route';
 
 const app = Fastify({
   logger: true,
 });
 
 app.register(healthRoutes, {
+  prefix: '/api',
+});
+
+app.register(domainRoutes, {
   prefix: '/api',
 });
 
