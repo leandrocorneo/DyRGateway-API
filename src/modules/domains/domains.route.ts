@@ -1,5 +1,6 @@
 import { FastifyPluginAsync, FastifyReply, FastifyRequest } from 'fastify';
 import DomainService from './domain.service';
+import { PaginationOptions } from '../../shared/types';
 
 type CreateDomainBody = {
   host: string;
@@ -18,7 +19,7 @@ const domainRoutes: FastifyPluginAsync = async (fastify) => {
   const service = new DomainService();
 
   fastify.get('/domains', async (request, reply) => {
-    const domains = await service.listDomains(request.query as paginationOptions);
+    const domains = await service.listDomains(request.query as PaginationOptions);
     return reply.send(domains);
     }
   );

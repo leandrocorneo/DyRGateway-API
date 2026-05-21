@@ -1,3 +1,4 @@
+import { PaginationOptions } from '../../shared/types';
 import DomainRepository from './domains.repository';
 
 export default class DomainService {
@@ -7,7 +8,7 @@ export default class DomainService {
 		this.repository = repository;
 	}
 
-	async listDomains(query: paginationOptions) {
+	async listDomains(query: PaginationOptions) {
         const skip = query.skip ? Number(query.skip) : undefined;
         const take = query.take ? Number(query.take) : 10;
 

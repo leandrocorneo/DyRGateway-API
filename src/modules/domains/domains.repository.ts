@@ -1,7 +1,8 @@
 import { prisma } from '../../database/prisma';
+import { PaginationOptions } from '../../shared/types';
 
 export default class DomainRepository {
-    async listDomains(paginationOpts?: paginationOptions) {
+    async listDomains(paginationOpts?: PaginationOptions) {
         return prisma.domain.findMany({
             orderBy: { createdAt: 'desc' },
             skip: paginationOpts?.skip,
