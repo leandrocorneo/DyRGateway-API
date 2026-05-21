@@ -4,6 +4,18 @@ import GatewayService from '../gateway.service';
 const gatewayProxyRoutes: FastifyPluginAsync = async (fastify) => {
   const gatewayService = new GatewayService();
 
+  const parseAsBuffer = (
+    _request: FastifyRequest,
+    body: Buffer,
+    done: (error: Error | null, value: Buffer) => void
+  ) => {
+    done(null, body);
+  };
+
+  fastify.addContentTypeParser('application/json', { parseAs: 'buffer' }, parseAsBuffer);
+  fastify.addContentTypeParser('application/x-www-form-urlencoded', { parseAs: 'buffer' }, parseAsBuffer);
+  fastify.addContentTypeParser('*', { parseAs: 'buffer' }, parseAsBuffer);
+
   const handler = async (request: FastifyRequest, reply: FastifyReply) => {
     const requestPath = request.url.split('?')[0] || '/';
     if (requestPath.startsWith('/api')) {
@@ -27,6 +39,7 @@ const gatewayProxyRoutes: FastifyPluginAsync = async (fastify) => {
         request: request.raw,
         response: reply.raw,
         target,
+        body: request.body as Buffer | undefined,
       });
     } catch (error) {
       fastify.log.error({ err: error, host, path: request.url }, 'HTTP proxy failed');

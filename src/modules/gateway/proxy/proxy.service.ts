@@ -1,5 +1,6 @@
 import httpProxy from 'http-proxy';
 import { IncomingMessage } from 'http';
+import { PassThrough } from 'stream';
 import { ProxyHttpRequest } from './proxy.types';
 
 export default class GatewayProxyService {
@@ -38,7 +39,7 @@ export default class GatewayProxyService {
     });
   }
 
-  async forwardRequest({ request, response, target }: ProxyHttpRequest) {
+  async forwardRequest({ request, response, target, body }: ProxyHttpRequest) {
     const targetUrl = `http://${target.service.targetHost}:${target.service.targetPort}`;
     const protocol = this.getRequestProtocol(request);
     const hostHeader = this.getHostHeader(request);
@@ -63,6 +64,8 @@ export default class GatewayProxyService {
       response.once('finish', handleFinish);
       response.once('close', handleFinish);
 
+      const bufferStream = body ? this.createBufferStream(body) : undefined;
+
       this.proxy.web(
         request,
         response,
@@ -71,6 +74,7 @@ export default class GatewayProxyService {
           autoRewrite: true,
           protocolRewrite: protocol,
           hostRewrite: hostWithoutPort || undefined,
+          buffer: bufferStream,
           headers: {
             host: hostWithoutPort || hostHeader,
             'x-forwarded-host': hostWithoutPort || hostHeader,
@@ -115,5 +119,11 @@ export default class GatewayProxyService {
 
     const rawValue = Array.isArray(value) ? value[value.length - 1] : value;
     return rawValue.split(',').map((item) => item.trim()).filter(Boolean).pop() || '';
+  }
+
+  private createBufferStream(body: Buffer) {
+    const stream = new PassThrough();
+    stream.end(body);
+    return stream;
   }
 }
