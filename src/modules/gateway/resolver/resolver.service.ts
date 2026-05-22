@@ -1,3 +1,4 @@
+import { redis } from '../../../cache/redis';
 import { prisma } from '../../../database/prisma';
 import {
   ResolvedHost,
@@ -6,10 +7,18 @@ import {
 } from './resolver.types';
 
 export default class GatewayResolverService {
+  private readonly cachePrefix = 'gateway:resolver';
+  private readonly cacheTtlSeconds = 300;
+
   async resolveHost(rawHost: string): Promise<ResolvedHost> {
     const host = this.normalizeHost(rawHost);
     if (!host) {
       return null;
+    }
+
+    const cachedHost = await this.getCached<ResolvedHost>(this.getHostCacheKey(host));
+    if (cachedHost !== undefined) {
+      return cachedHost;
     }
 
     const domain = await prisma.domain.findUnique({
@@ -39,11 +48,7 @@ export default class GatewayResolverService {
       },
     });
 
-    if (!domain || !domain.application.active) {
-      return null;
-    }
-
-    return {
+    const resolvedHost = domain && domain.application.active ? {
       host: domain.host,
       domainId: domain.id,
       application: {
@@ -53,29 +58,47 @@ export default class GatewayResolverService {
         active: domain.application.active,
       },
       services: domain.application.services,
-    };
+    } : null;
+
+    await this.setCached(this.getHostCacheKey(host), resolvedHost);
+    return resolvedHost;
   }
 
   async resolveTarget(rawHost: string, rawPath = '/'): Promise<ResolvedTarget> {
-    const resolvedHost = await this.resolveHost(rawHost);
-    if (!resolvedHost) {
+    const path = this.normalizePath(rawPath);
+    const host = this.normalizeHost(rawHost);
+    if (!host) {
       return null;
     }
 
-    const path = this.normalizePath(rawPath);
+    const cachedTarget = await this.getCached<ResolvedTarget>(this.getTargetCacheKey(host, path));
+    if (cachedTarget !== undefined) {
+      return cachedTarget;
+    }
+
+    const resolvedHost = await this.resolveHost(host);
+    if (!resolvedHost) {
+      await this.setCached(this.getTargetCacheKey(host, path), null);
+      return null;
+    }
+
     const service = this.selectService(resolvedHost.services, path);
 
     if (!service) {
+      await this.setCached(this.getTargetCacheKey(host, path), null);
       return null;
     }
 
-    return {
+    const resolvedTarget = {
       host: resolvedHost.host,
       path,
       domainId: resolvedHost.domainId,
       application: resolvedHost.application,
       service,
     };
+
+    await this.setCached(this.getTargetCacheKey(host, path), resolvedTarget);
+    return resolvedTarget;
   }
 
   private selectService(services: ResolvedService[], requestPath: string) {
@@ -125,5 +148,34 @@ export default class GatewayResolverService {
     return withoutQueryString.startsWith('/')
       ? withoutQueryString
       : `/${withoutQueryString}`;
+  }
+
+  private getHostCacheKey(host: string) {
+    return `${this.cachePrefix}:host:${host}`;
+  }
+
+  private getTargetCacheKey(host: string, path: string) {
+    return `${this.cachePrefix}:target:${host}:${path}`;
+  }
+
+  private async getCached<T>(key: string): Promise<T | null | undefined> {
+    try {
+      const rawValue = await redis.get(key);
+      if (rawValue === null) {
+        return undefined;
+      }
+
+      return JSON.parse(rawValue) as T | null;
+    } catch {
+      return undefined;
+    }
+  }
+
+  private async setCached<T>(key: string, value: T | null) {
+    try {
+      await redis.setex(key, this.cacheTtlSeconds, JSON.stringify(value));
+    } catch {
+      // Cache failures should not block routing.
+    }
   }
 }
