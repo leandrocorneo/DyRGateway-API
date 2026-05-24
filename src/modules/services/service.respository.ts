@@ -18,11 +18,11 @@ export default class ServiceRepository {
     }
 
     async createService(data: CreateServiceDTO) {
-        const { applicationId, type, path, targetHost, targetPort, active } = data;
+        const { applicationId, serviceTypeId, path, targetHost, targetPort, active } = data;
         return prisma.service.create({
             data: {
                 applicationId,
-                type,
+                serviceTypeId,
                 path,
                 targetHost,
                 targetPort,

@@ -33,11 +33,11 @@ export default class ServicesService {
 
     async createService(data: CreateServiceDTO) {
         const applicationId = data.applicationId?.trim();
-        const type = data.type?.trim();
+        const serviceTypeId = data.serviceTypeId?.trim();
         const targetHost = data.targetHost?.trim();
 
-        if (!applicationId || !type || !data.path || !targetHost) {
-            throw new Error('applicationId, type, path and targetHost are required');
+        if (!applicationId || !serviceTypeId || !data.path || !targetHost) {
+            throw new Error('applicationId, serviceTypeId, path and targetHost are required');
         }
 
         if (!Number.isInteger(data.targetPort) || data.targetPort <= 0) {
@@ -47,7 +47,7 @@ export default class ServicesService {
         return this.repository.createService({
             ...data,
             applicationId,
-            type: type.toLowerCase(),
+            serviceTypeId,
             path: this.normalizePath(data.path),
             targetHost,
         });
@@ -68,12 +68,12 @@ export default class ServicesService {
             updateData.applicationId = applicationId;
         }
 
-        if (data.type !== undefined) {
-            const type = data.type.trim().toLowerCase();
-            if (!type) {
-                throw new Error('type cannot be empty');
+        if (data.serviceTypeId !== undefined) {
+            const serviceTypeId = data.serviceTypeId.trim();
+            if (!serviceTypeId) {
+                throw new Error('serviceTypeId cannot be empty');
             }
-            updateData.type = type;
+            updateData.serviceTypeId = serviceTypeId;
         }
 
         if (data.path !== undefined) {
