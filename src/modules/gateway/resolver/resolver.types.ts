@@ -8,7 +8,11 @@ export type ResolvedApplication = {
 export type ResolvedService = {
   id: string;
   applicationId: string;
-  type: string;
+  serviceTypeId: string;
+  serviceType: {
+    id: string;
+    description: string;
+  };
   path: string;
   targetHost: string;
   targetPort: number;

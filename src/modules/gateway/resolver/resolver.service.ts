@@ -35,7 +35,13 @@ export default class GatewayResolverService {
               select: {
                 id: true,
                 applicationId: true,
-                type: true,
+                serviceTypeId: true,
+                serviceType: {
+                  select: {
+                    id: true,
+                    description: true,
+                  },
+                },
                 path: true,
                 targetHost: true,
                 targetPort: true,
@@ -108,7 +114,7 @@ export default class GatewayResolverService {
 
     const normalizedPath = this.normalizePath(requestPath);
     const normalizedServices = services
-      .filter((service) => service.type.toLowerCase() === 'http')
+      .filter((service) => service.serviceType?.description?.toLowerCase() === 'http')
       .map((service) => ({
         ...service,
         path: this.normalizePath(service.path),

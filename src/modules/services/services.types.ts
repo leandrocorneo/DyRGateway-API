@@ -1,6 +1,6 @@
 export type CreateServiceDTO = {
   applicationId: string;
-  type: string;
+  serviceTypeId: string;
   path: string;
   targetHost: string;
   targetPort: number;
@@ -9,7 +9,7 @@ export type CreateServiceDTO = {
 
 export type UpdateServiceDTO = {
   applicationId?: string;
-  type?: string;
+  serviceTypeId?: string;
   path?: string;
   targetHost?: string;
   targetPort?: number;
