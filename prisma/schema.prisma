@@ -35,15 +35,26 @@ model Domain {
 model Service {
   id            String      @id @default(uuid())
   applicationId String
-  type          String      // e.g., 'http', 'websocket'
-  path          String      // e.g., '/api', '/'
+  serviceTypeId String
+  path          String      
   targetHost    String
   targetPort    Int
   active        Boolean     @default(true)
   createdAt     DateTime    @default(now())
 
   application   Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  serviceType   ServiceType @relation(fields: [serviceTypeId], references: [id])
 
   @@index([applicationId])
+  @@index([serviceTypeId])
   @@map("services")
+}
+
+model ServiceType {
+  id        String    @id @default(uuid())
+  description String
+
+  services  Service[]
+
+  @@map("service_types")
 }
