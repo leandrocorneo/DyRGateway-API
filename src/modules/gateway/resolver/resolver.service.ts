@@ -70,28 +70,31 @@ export default class GatewayResolverService {
     return resolvedHost;
   }
 
-  async resolveTarget(rawHost: string, rawPath = '/'): Promise<ResolvedTarget> {
+  async resolveTarget(rawHost: string, rawPath = '/', serviceType = 'http'): Promise<ResolvedTarget> {
     const path = this.normalizePath(rawPath);
     const host = this.normalizeHost(rawHost);
+    const normalizedServiceType = this.normalizeServiceType(serviceType);
     if (!host) {
       return null;
     }
 
-    const cachedTarget = await this.getCached<ResolvedTarget>(this.getTargetCacheKey(host, path));
+    const cachedTarget = await this.getCached<ResolvedTarget>(
+      this.getTargetCacheKey(host, path, normalizedServiceType)
+    );
     if (cachedTarget !== undefined) {
       return cachedTarget;
     }
 
     const resolvedHost = await this.resolveHost(host);
     if (!resolvedHost) {
-      await this.setCached(this.getTargetCacheKey(host, path), null);
+      await this.setCached(this.getTargetCacheKey(host, path, normalizedServiceType), null);
       return null;
     }
 
-    const service = this.selectService(resolvedHost.services, path);
+    const service = this.selectService(resolvedHost.services, path, normalizedServiceType);
 
     if (!service) {
-      await this.setCached(this.getTargetCacheKey(host, path), null);
+      await this.setCached(this.getTargetCacheKey(host, path, normalizedServiceType), null);
       return null;
     }
 
@@ -103,18 +106,18 @@ export default class GatewayResolverService {
       service,
     };
 
-    await this.setCached(this.getTargetCacheKey(host, path), resolvedTarget);
+    await this.setCached(this.getTargetCacheKey(host, path, normalizedServiceType), resolvedTarget);
     return resolvedTarget;
   }
 
-  private selectService(services: ResolvedService[], requestPath: string) {
+  private selectService(services: ResolvedService[], requestPath: string, serviceType: string) {
     if (services.length === 0) {
       return null;
     }
 
     const normalizedPath = this.normalizePath(requestPath);
     const normalizedServices = services
-      .filter((service) => service.serviceType?.description?.toLowerCase() === 'http')
+      .filter((service) => this.normalizeServiceType(service.serviceType?.description) === serviceType)
       .map((service) => ({
         ...service,
         path: this.normalizePath(service.path),
@@ -156,12 +159,16 @@ export default class GatewayResolverService {
       : `/${withoutQueryString}`;
   }
 
+  private normalizeServiceType(serviceType?: string) {
+    return serviceType?.trim().toLowerCase() || 'http';
+  }
+
   private getHostCacheKey(host: string) {
     return `${this.cachePrefix}:host:${host}`;
   }
 
-  private getTargetCacheKey(host: string, path: string) {
-    return `${this.cachePrefix}:target:${host}:${path}`;
+  private getTargetCacheKey(host: string, path: string, serviceType: string) {
+    return `${this.cachePrefix}:target:${serviceType}:${host}:${path}`;
   }
 
   private async getCached<T>(key: string): Promise<T | null | undefined> {

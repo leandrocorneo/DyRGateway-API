@@ -1,6 +1,6 @@
 import GatewayResolverService from './resolver/resolver.service';
 import GatewayProxyService from './proxy/proxy.service';
-import { ProxyHttpRequest } from './proxy/proxy.types';
+import { ProxyHttpRequest, ProxyWebSocketRequest } from './proxy/proxy.types';
 
 export default class GatewayService {
   private readonly resolver: GatewayResolverService;
@@ -22,15 +22,19 @@ export default class GatewayService {
     return this.resolver.resolveHost(host);
   }
 
-  async resolveTarget(host: string, path = '/') {
+  async resolveTarget(host: string, path = '/', serviceType = 'http') {
     if (!host?.trim()) {
       throw new Error('host is required');
     }
 
-    return this.resolver.resolveTarget(host, path);
+    return this.resolver.resolveTarget(host, path, serviceType);
   }
 
   async forwardRequest(request: ProxyHttpRequest) {
     return this.proxy.forwardRequest(request);
+  }
+
+  async forwardWebSocket(request: ProxyWebSocketRequest) {
+    return this.proxy.forwardWebSocket(request);
   }
 }

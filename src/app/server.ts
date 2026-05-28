@@ -8,6 +8,7 @@ import servicesRoutes from '../modules/services/services.route';
 import applicationsRoutes from '../modules/applications/applications.route';
 import gatewayRoutes from '../modules/gateway/gateway.route';
 import gatewayProxyRoutes from '../modules/gateway/proxy/proxy.route';
+import { registerGatewayWebSocketProxy } from '../modules/gateway/proxy/websocket.route';
 
 const app = Fastify({
   logger: true,
@@ -34,6 +35,7 @@ app.register(gatewayRoutes, {
 });
 
 app.register(gatewayProxyRoutes);
+registerGatewayWebSocketProxy(app);
 
 const gracefulShutdown = async (signal: string) => {
   await app.close();

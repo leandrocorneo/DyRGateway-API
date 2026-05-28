@@ -1,7 +1,7 @@
 import httpProxy from 'http-proxy';
 import { IncomingMessage } from 'http';
 import { PassThrough } from 'stream';
-import { ProxyHttpRequest } from './proxy.types';
+import { ProxyHttpRequest, ProxyWebSocketRequest } from './proxy.types';
 
 export default class GatewayProxyService {
   private readonly proxy: httpProxy;
@@ -75,6 +75,50 @@ export default class GatewayProxyService {
           protocolRewrite: protocol,
           hostRewrite: hostWithoutPort || undefined,
           buffer: bufferStream,
+          headers: {
+            host: hostWithoutPort || hostHeader,
+            'x-forwarded-host': hostWithoutPort || hostHeader,
+            'x-forwarded-proto': protocol,
+            'x-forwarded-port': forwardedPort,
+          },
+        },
+        (error: Error) => {
+          cleanup();
+          reject(error);
+        }
+      );
+    });
+  }
+
+  async forwardWebSocket({ request, socket, head, target }: ProxyWebSocketRequest) {
+    const targetUrl = `ws://${target.service.targetHost}:${target.service.targetPort}`;
+    const protocol = this.getRequestProtocol(request);
+    const hostHeader = this.getHostHeader(request);
+    const hostWithoutPort = this.getHostWithoutPort(hostHeader);
+
+    const forwardedPortFromHeader = this.getLastHeaderValue(request.headers['x-forwarded-port']);
+    const forwardedPort =
+      forwardedPortFromHeader ||
+      (protocol === 'https' ? '443' : '80');
+
+    return new Promise<void>((resolve, reject) => {
+      const handleClose = () => {
+        cleanup();
+        resolve();
+      };
+
+      const cleanup = () => {
+        socket.removeListener('close', handleClose);
+      };
+
+      socket.once('close', handleClose);
+
+      this.proxy.ws(
+        request,
+        socket,
+        head,
+        {
+          target: targetUrl,
           headers: {
             host: hostWithoutPort || hostHeader,
             'x-forwarded-host': hostWithoutPort || hostHeader,

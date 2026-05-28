@@ -1,4 +1,5 @@
 import { IncomingMessage, ServerResponse } from 'http';
+import { Duplex } from 'stream';
 import { ResolvedTarget } from '../resolver/resolver.types';
 
 export type ProxyHttpRequest = {
@@ -6,4 +7,11 @@ export type ProxyHttpRequest = {
   response: ServerResponse;
   target: NonNullable<ResolvedTarget>;
   body?: Buffer;
+};
+
+export type ProxyWebSocketRequest = {
+  request: IncomingMessage;
+  socket: Duplex;
+  head: Buffer;
+  target: NonNullable<ResolvedTarget>;
 };
