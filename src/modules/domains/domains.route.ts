@@ -1,4 +1,4 @@
-import { FastifyPluginAsync, FastifyReply, FastifyRequest } from 'fastify';
+import { FastifyPluginAsync } from 'fastify';
 import { Prisma } from '@prisma/client';
 import DomainService from './domain.service';
 import { PaginationOptions } from '../../shared/types';
@@ -7,18 +7,16 @@ import { CreateDomainDTO, DomainByHostParams, DomainByIdParams, UpdateDomainDTO 
 const domainRoutes: FastifyPluginAsync = async (fastify) => {
   const service = new DomainService();
 
-  fastify.get('/domains', async (request, reply) => {
+  fastify.get('/domains', { preHandler: [fastify.authenticate] }, async (request, reply) => {
     const domains = await service.listDomains(request.query as PaginationOptions);
     return reply.send(domains);
     }
   );
 
-  fastify.get(
+  fastify.get<{ Params: DomainByHostParams }>(
     '/domains/host/:host',
-    async (
-      request: FastifyRequest<{ Params: DomainByHostParams }>,
-      reply: FastifyReply
-    ) => {
+    { preHandler: [fastify.authenticate] },
+    async (request, reply) => {
       const domain = await service.findByHost(request.params.host);
 
       if (!domain) {
@@ -29,12 +27,10 @@ const domainRoutes: FastifyPluginAsync = async (fastify) => {
     }
   );
 
-  fastify.post(
+  fastify.post<{ Body: CreateDomainDTO }>(
     '/domains',
-    async (
-      request: FastifyRequest<{ Body: CreateDomainDTO }>,
-      reply: FastifyReply
-    ) => {
+    { preHandler: [fastify.authenticate] },
+    async (request, reply) => {
       try {
         const domain = await service.createDomain(request.body);
         return reply.status(201).send(domain);
@@ -44,12 +40,10 @@ const domainRoutes: FastifyPluginAsync = async (fastify) => {
     }
   );
 
-  fastify.put(
+  fastify.put<{ Params: DomainByIdParams; Body: UpdateDomainDTO }>(
     '/domains/:id',
-    async (
-      request: FastifyRequest<{ Params: DomainByIdParams; Body: UpdateDomainDTO }>,
-      reply: FastifyReply
-    ) => {
+    { preHandler: [fastify.authenticate] },
+    async (request, reply) => {
       try {
         const domain = await service.updateDomain(request.params.id, request.body);
         return reply.send(domain);
@@ -63,12 +57,10 @@ const domainRoutes: FastifyPluginAsync = async (fastify) => {
     }
   );
 
-  fastify.delete(
+  fastify.delete<{ Params: DomainByIdParams }>(
     '/domains/:id',
-    async (
-      request: FastifyRequest<{ Params: DomainByIdParams }>,
-      reply: FastifyReply
-    ) => {
+    { preHandler: [fastify.authenticate] },
+    async (request, reply) => {
       try {
         const domain = await service.deleteDomain(request.params.id);
         return reply.send(domain);

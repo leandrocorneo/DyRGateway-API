@@ -1,4 +1,4 @@
-import { FastifyPluginAsync, FastifyReply, FastifyRequest } from 'fastify';
+import { FastifyPluginAsync } from 'fastify';
 import { Prisma } from '@prisma/client';
 import ApplicationsService from './applications.service';
 import { CreateApplicationDTO, ApplicationByIdParams, UpdateApplicationDTO } from './applications.types';
@@ -7,17 +7,15 @@ import { PaginationOptions } from '../../shared/types';
 const applicationRoutes: FastifyPluginAsync = async (fastify) => {
   const service = new ApplicationsService();
 
-  fastify.get('/applications', async (request, reply) => {
+  fastify.get('/applications', { preHandler: [fastify.authenticate] }, async (request, reply) => {
     const applications = await service.listApplications(request.query as PaginationOptions);
     return reply.send(applications);
   });
 
-  fastify.get(
+  fastify.get<{ Params: ApplicationByIdParams }>(
     '/applications/:id',
-    async (
-      request: FastifyRequest<{ Params: ApplicationByIdParams }>,
-      reply: FastifyReply
-    ) => {
+    { preHandler: [fastify.authenticate] },
+    async (request, reply) => {
       const application = await service.findById(request.params.id);
       if (!application) {
         return reply.status(404).send({ message: 'Application not found' });
@@ -26,12 +24,10 @@ const applicationRoutes: FastifyPluginAsync = async (fastify) => {
     }
   );
 
-  fastify.post(
+  fastify.post<{ Body: CreateApplicationDTO }>(
     '/applications',
-    async (
-      request: FastifyRequest<{ Body: CreateApplicationDTO }>,
-      reply: FastifyReply
-    ) => {
+    { preHandler: [fastify.authenticate] },
+    async (request, reply) => {
       try {
         const application = await service.createApplication(request.body);
         return reply.status(201).send(application);
@@ -41,12 +37,10 @@ const applicationRoutes: FastifyPluginAsync = async (fastify) => {
     }
   );
 
-  fastify.put(
+  fastify.put<{ Params: ApplicationByIdParams; Body: UpdateApplicationDTO }>(
     '/applications/:id',
-    async (
-      request: FastifyRequest<{ Params: ApplicationByIdParams; Body: UpdateApplicationDTO }>,
-      reply: FastifyReply
-    ) => {
+    { preHandler: [fastify.authenticate] },
+    async (request, reply) => {
       try {
         const application = await service.updateApplication(request.params.id, request.body);
         return reply.send(application);
@@ -60,12 +54,10 @@ const applicationRoutes: FastifyPluginAsync = async (fastify) => {
     }
   );
 
-  fastify.delete(
+  fastify.delete<{ Params: ApplicationByIdParams }>(
     '/applications/:id',
-    async (
-      request: FastifyRequest<{ Params: ApplicationByIdParams }>,
-      reply: FastifyReply
-    ) => {
+    { preHandler: [fastify.authenticate] },
+    async (request, reply) => {
       try {
         await service.deleteApplication(request.params.id);
         return reply.status(204).send();

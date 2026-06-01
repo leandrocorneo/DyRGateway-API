@@ -1,4 +1,4 @@
-import { FastifyPluginAsync, FastifyReply, FastifyRequest } from 'fastify';
+import { FastifyPluginAsync } from 'fastify';
 import { Prisma } from '@prisma/client';
 import ServicesService from './services.service';
 import { CreateServiceDTO, UpdateServiceDTO } from './services.types';
@@ -9,15 +9,17 @@ const serviceRoutes: FastifyPluginAsync = async (fastify) => {
 
     fastify.get(
         '/services',
+        { preHandler: [fastify.authenticate] },
         async (request, reply) => {
             const services = await servicesService.listServices(request.query as PaginationOptions);
             return reply.send(services);
         }
     );
 
-    fastify.get(
+    fastify.get<{ Params: { id: string } }>(
         '/services/:id',
-        async (request: FastifyRequest<{ Params: { id: string } }>, reply) => {
+        { preHandler: [fastify.authenticate] },
+        async (request, reply) => {
             const service = await servicesService.findById(request.params.id);
             if (!service) {
                 return reply.status(404).send({ message: 'Service not found' });
@@ -26,9 +28,10 @@ const serviceRoutes: FastifyPluginAsync = async (fastify) => {
         }
     );
 
-    fastify.post(
+    fastify.post<{ Body: CreateServiceDTO }>(
         '/services', 
-        async (request: FastifyRequest<{ Body: CreateServiceDTO }>, reply) => {
+        { preHandler: [fastify.authenticate] },
+        async (request, reply) => {
             try {
                 const service = await servicesService.createService(request.body);
                 return reply.status(201).send(service);
@@ -38,12 +41,10 @@ const serviceRoutes: FastifyPluginAsync = async (fastify) => {
         }
     );
 
-    fastify.put(
+    fastify.put<{ Params: { id: string }; Body: UpdateServiceDTO }>(
         '/services/:id',
-        async (
-            request: FastifyRequest<{ Params: { id: string }; Body: UpdateServiceDTO }>,
-            reply: FastifyReply
-        ) => {
+        { preHandler: [fastify.authenticate] },
+        async (request, reply) => {
             try {
                 const service = await servicesService.updateService(request.params.id, request.body);
                 return reply.send(service);
@@ -57,9 +58,10 @@ const serviceRoutes: FastifyPluginAsync = async (fastify) => {
         }
     );
 
-    fastify.delete(
+    fastify.delete<{ Params: { id: string } }>(
         '/services/:id',
-        async (request: FastifyRequest<{ Params: { id: string } }>, reply) => {
+        { preHandler: [fastify.authenticate] },
+        async (request, reply) => {
             try {
                 await servicesService.deleteService(request.params.id);
                 return reply.status(204).send();
