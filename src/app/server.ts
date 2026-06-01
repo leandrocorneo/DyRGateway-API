@@ -9,6 +9,7 @@ import applicationsRoutes from '../modules/applications/applications.route';
 import gatewayRoutes from '../modules/gateway/gateway.route';
 import gatewayProxyRoutes from '../modules/gateway/proxy/proxy.route';
 import { registerGatewayWebSocketProxy } from '../modules/gateway/proxy/websocket.route';
+import userRoutes from '../modules/users/user.routes';
 
 const app = Fastify({
   logger: true,
@@ -31,6 +32,10 @@ app.register(applicationsRoutes, {
 });
 
 app.register(gatewayRoutes, {
+  prefix: '/api',
+});
+
+app.register(userRoutes, {
   prefix: '/api',
 });
 

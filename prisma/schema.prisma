@@ -58,3 +58,13 @@ model ServiceType {
 
   @@map("service_types")
 }
+
+model User {
+  id       String @id @default(uuid())
+  email    String @unique
+  password String
+  active        Boolean     @default(true)
+  createdAt     DateTime    @default(now())
+
+  @@map("users")
+}
