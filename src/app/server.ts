@@ -10,10 +10,23 @@ import gatewayRoutes from '../modules/gateway/gateway.route';
 import gatewayProxyRoutes from '../modules/gateway/proxy/proxy.route';
 import { registerGatewayWebSocketProxy } from '../modules/gateway/proxy/websocket.route';
 import userRoutes from '../modules/users/user.routes';
+import authRoutes from '../modules/auth/auth.routes';
+import { registerAuthGuard } from '../modules/auth/auth.guard';
+import cookie from '@fastify/cookie';
+import jwt from '@fastify/jwt';
 
 const app = Fastify({
   logger: true,
 });
+
+
+app.register(cookie);
+
+app.register(jwt, {
+  secret: process.env.JWT_SECRET || 'defaultsecret',
+});
+
+registerAuthGuard(app);
 
 app.register(healthRoutes, {
   prefix: '/api',
@@ -36,6 +49,10 @@ app.register(gatewayRoutes, {
 });
 
 app.register(userRoutes, {
+  prefix: '/api',
+});
+
+app.register(authRoutes, {
   prefix: '/api',
 });
 

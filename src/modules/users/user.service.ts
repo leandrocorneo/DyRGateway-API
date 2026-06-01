@@ -11,4 +11,8 @@ export class UserService {
     async createUser(data: CreateUserDTO) {
         return this.userRepository.createUser(data);
     }
+
+    async findByEmail(email: string) {
+        return this.userRepository.findByEmail(email);
+    }
 }

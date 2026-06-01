@@ -11,17 +11,21 @@
     "prisma:migrate": "prisma migrate dev"
   },
   "dependencies": {
+    "@fastify/cookie": "^11.0.2",
+    "@fastify/jwt": "^10.1.0",
     "@prisma/client": "^5.0.0",
-    "fastify": "^4.24.3",
-    "ioredis": "^5.3.2",
+    "bcrypt": "^6.0.0",
+    "dotenv": "^16.3.1",
+    "fastify": "^5.0.0  ",
     "http-proxy": "^1.18.1",
-    "dotenv": "^16.3.1"
+    "ioredis": "^5.3.2"
   },
   "devDependencies": {
-    "typescript": "^5.2.2",
-    "@types/node": "^20.8.7",
+    "@types/bcrypt": "^6.0.0",
     "@types/http-proxy": "^1.17.13",
+    "@types/node": "^20.8.7",
+    "prisma": "^5.4.2",
     "tsx": "^3.14.0",
-    "prisma": "^5.4.2"
+    "typescript": "^5.2.2"
   }
 }
