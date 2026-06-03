@@ -9,5 +9,7 @@ export const config = {
     host: process.env.REDIS_HOST || 'localhost',
     port: parseInt(process.env.REDIS_PORT || '6379', 10),
   },
+  jwtSecret: process.env.JWT_SECRET || 'defaultsecret',
+  corsOrigin: process.env.CORS_ORIGIN || 'http://localhost:9100',
   databaseUrl: process.env.DATABASE_URL || 'postgresql://postgres:password@localhost:5432/dyr_gateway',
 };

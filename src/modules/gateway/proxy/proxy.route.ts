@@ -55,8 +55,8 @@ const gatewayProxyRoutes: FastifyPluginAsync = async (fastify) => {
     }
   };
 
-  fastify.all('/', handler);
-  fastify.all('/*', handler);
+  fastify.route({ method: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD'], url: '/', handler });
+  fastify.route({ method: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD'], url: '/*', handler });
 };
 
 export default gatewayProxyRoutes;

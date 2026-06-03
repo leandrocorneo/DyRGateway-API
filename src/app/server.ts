@@ -14,16 +14,21 @@ import authRoutes from '../modules/auth/auth.routes';
 import { registerAuthGuard } from '../modules/auth/auth.guard';
 import cookie from '@fastify/cookie';
 import jwt from '@fastify/jwt';
+import cors from '@fastify/cors';
 
 const app = Fastify({
   logger: true,
 });
 
+app.register(cors, {
+  origin: config.corsOrigin,
+  credentials: true,
+});
 
 app.register(cookie);
 
 app.register(jwt, {
-  secret: process.env.JWT_SECRET || 'defaultsecret',
+  secret: config.jwtSecret,
 });
 
 registerAuthGuard(app);
