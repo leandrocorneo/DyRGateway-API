@@ -12,4 +12,12 @@ export const config = {
   jwtSecret: process.env.JWT_SECRET || 'defaultsecret',
   corsOrigin: process.env.CORS_ORIGIN || 'http://localhost:9100',
   databaseUrl: process.env.DATABASE_URL || 'postgresql://postgres:password@localhost:5432/dyr_gateway',
+  monitoring: {
+    intervalSeconds: parseInt(process.env.METRICS_INTERVAL_SECONDS || '30', 10),
+    retentionDays: parseInt(process.env.METRICS_RETENTION_DAYS || '15', 10),
+    proxyTimeoutMs: parseInt(process.env.PROXY_TIMEOUT_MS || '30000', 10),
+    slowDatabaseMs: parseInt(process.env.SLOW_DATABASE_MS || '500', 10),
+    slowRedisMs: parseInt(process.env.SLOW_REDIS_MS || '100', 10),
+    slowUpstreamMs: parseInt(process.env.SLOW_UPSTREAM_MS || '1000', 10),
+  },
 };

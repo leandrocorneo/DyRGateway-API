@@ -7,6 +7,7 @@ export type ProxyHttpRequest = {
   response: ServerResponse;
   target: NonNullable<ResolvedTarget>;
   body?: Buffer;
+  onProxyResponse?: (statusCode: number) => void;
 };
 
 export type ProxyWebSocketRequest = {

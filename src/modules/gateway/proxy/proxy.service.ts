@@ -5,88 +5,54 @@ import { ProxyHttpRequest, ProxyWebSocketRequest } from './proxy.types';
 
 export default class GatewayProxyService {
   private readonly proxy: httpProxy;
+  private readonly timeoutMs = Number(process.env.PROXY_TIMEOUT_MS || 30000);
 
   constructor() {
-    this.proxy = httpProxy.createProxyServer({
-      changeOrigin: false,
-      xfwd: false,
-      secure: false,
-      ws: true,
-    });
-
+    this.proxy = httpProxy.createProxyServer({ changeOrigin: false, xfwd: false, secure: false, ws: true });
     this.proxy.on('proxyRes', (proxyRes, request) => {
       const locationHeader = proxyRes.headers.location;
-      if (!locationHeader || Array.isArray(locationHeader)) {
-        return;
-      }
-
-      const protocol = this.getRequestProtocol(request);
-      if (protocol !== 'https') {
-        return;
-      }
-
+      if (!locationHeader || Array.isArray(locationHeader) || this.getRequestProtocol(request) !== 'https') return;
       try {
         const locationUrl = new URL(locationHeader);
-
-        // Avoid redirects like https://example.com:80/...
         if (locationUrl.protocol === 'https:' && locationUrl.port === '80') {
           locationUrl.port = '';
           proxyRes.headers.location = locationUrl.toString();
         }
-      } catch {
-        // Ignore relative locations or non-URL values.
-      }
+      } catch {}
     });
   }
 
-  async forwardRequest({ request, response, target, body }: ProxyHttpRequest) {
+  async forwardRequest({ request, response, target, body, onProxyResponse }: ProxyHttpRequest) {
     const targetUrl = `http://${target.service.targetHost}:${target.service.targetPort}`;
     const protocol = this.getRequestProtocol(request);
     const hostHeader = this.getHostHeader(request);
     const hostWithoutPort = this.getHostWithoutPort(hostHeader);
-
-    const forwardedPortFromHeader = this.getLastHeaderValue(request.headers['x-forwarded-port']);
-    const forwardedPort =
-      forwardedPortFromHeader ||
-      (protocol === 'https' ? '443' : '80');
+    const forwardedPort = this.getLastHeaderValue(request.headers['x-forwarded-port']) || (protocol === 'https' ? '443' : '80');
 
     return new Promise<void>((resolve, reject) => {
-      const handleFinish = () => {
-        cleanup();
-        resolve();
+      const handleFinish = () => { cleanup(); resolve(); };
+      const handleProxyResponse = (proxyResponse: IncomingMessage, proxyRequest: IncomingMessage) => {
+        if (proxyRequest === request) onProxyResponse?.(proxyResponse.statusCode || 502);
       };
-
       const cleanup = () => {
         response.removeListener('finish', handleFinish);
         response.removeListener('close', handleFinish);
+        this.proxy.removeListener('proxyRes', handleProxyResponse as any);
       };
-
       response.once('finish', handleFinish);
       response.once('close', handleFinish);
-
+      this.proxy.on('proxyRes', handleProxyResponse);
       const bufferStream = body ? this.createBufferStream(body) : undefined;
-
-      this.proxy.web(
-        request,
-        response,
-        {
-          target: targetUrl,
-          autoRewrite: true,
-          protocolRewrite: protocol,
-          hostRewrite: hostWithoutPort || undefined,
-          buffer: bufferStream,
-          headers: {
-            host: hostWithoutPort || hostHeader,
-            'x-forwarded-host': hostWithoutPort || hostHeader,
-            'x-forwarded-proto': protocol,
-            'x-forwarded-port': forwardedPort,
-          },
+      this.proxy.web(request, response, {
+        target: targetUrl, autoRewrite: true, protocolRewrite: protocol,
+        hostRewrite: hostWithoutPort || undefined, buffer: bufferStream,
+        timeout: this.timeoutMs, proxyTimeout: this.timeoutMs,
+        headers: {
+          host: hostWithoutPort || hostHeader,
+          'x-forwarded-host': hostWithoutPort || hostHeader,
+          'x-forwarded-proto': protocol, 'x-forwarded-port': forwardedPort,
         },
-        (error: Error) => {
-          cleanup();
-          reject(error);
-        }
-      );
+      }, (error: Error) => { cleanup(); reject(error); });
     });
   }
 
@@ -95,79 +61,28 @@ export default class GatewayProxyService {
     const protocol = this.getRequestProtocol(request);
     const hostHeader = this.getHostHeader(request);
     const hostWithoutPort = this.getHostWithoutPort(hostHeader);
-
-    const forwardedPortFromHeader = this.getLastHeaderValue(request.headers['x-forwarded-port']);
-    const forwardedPort =
-      forwardedPortFromHeader ||
-      (protocol === 'https' ? '443' : '80');
-
+    const forwardedPort = this.getLastHeaderValue(request.headers['x-forwarded-port']) || (protocol === 'https' ? '443' : '80');
     return new Promise<void>((resolve, reject) => {
-      const handleClose = () => {
-        cleanup();
-        resolve();
-      };
-
-      const cleanup = () => {
-        socket.removeListener('close', handleClose);
-      };
-
+      const handleClose = () => { cleanup(); resolve(); };
+      const cleanup = () => { socket.removeListener('close', handleClose); };
       socket.once('close', handleClose);
-
-      this.proxy.ws(
-        request,
-        socket,
-        head,
-        {
-          target: targetUrl,
-          headers: {
-            host: hostWithoutPort || hostHeader,
-            'x-forwarded-host': hostWithoutPort || hostHeader,
-            'x-forwarded-proto': protocol,
-            'x-forwarded-port': forwardedPort,
-          },
-        },
-        (error: Error) => {
-          cleanup();
-          reject(error);
-        }
-      );
+      this.proxy.ws(request, socket, head, { target: targetUrl, timeout: this.timeoutMs, proxyTimeout: this.timeoutMs,
+        headers: { host: hostWithoutPort || hostHeader, 'x-forwarded-host': hostWithoutPort || hostHeader, 'x-forwarded-proto': protocol, 'x-forwarded-port': forwardedPort },
+      }, (error: Error) => { cleanup(); reject(error); });
     });
   }
 
   private getRequestProtocol(request: IncomingMessage) {
-    const headerValue = this.getLastHeaderValue(request.headers['x-forwarded-proto']);
-    if (headerValue === 'https' || headerValue === 'http') {
-      return headerValue;
-    }
-
+    const value = this.getLastHeaderValue(request.headers['x-forwarded-proto']);
+    if (value === 'https' || value === 'http') return value;
     return 'encrypted' in request.socket ? 'https' : 'http';
   }
-
-  private getHostHeader(request: IncomingMessage) {
-    const hostHeader = request.headers.host;
-    if (!hostHeader) {
-      return '';
-    }
-
-    return hostHeader.trim();
-  }
-
-  private getHostWithoutPort(hostHeader: string) {
-    return hostHeader.replace(/:\d+$/, '');
-  }
-
+  private getHostHeader(request: IncomingMessage) { return request.headers.host?.trim() || ''; }
+  private getHostWithoutPort(hostHeader: string) { return hostHeader.replace(/:\d+$/, ''); }
   private getLastHeaderValue(value?: string | string[]) {
-    if (!value) {
-      return '';
-    }
-
+    if (!value) return '';
     const rawValue = Array.isArray(value) ? value[value.length - 1] : value;
     return rawValue.split(',').map((item) => item.trim()).filter(Boolean).pop() || '';
   }
-
-  private createBufferStream(body: Buffer) {
-    const stream = new PassThrough();
-    stream.end(body);
-    return stream;
-  }
+  private createBufferStream(body: Buffer) { const stream = new PassThrough(); stream.end(body); return stream; }
 }
