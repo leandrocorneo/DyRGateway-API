@@ -68,3 +68,72 @@ model User {
 
   @@map("users")
 }
+
+model InfrastructureMetricSample {
+  id String @id @default(uuid())
+  sampleKey String @unique
+  component String
+  status String
+  sampledAt DateTime
+  metrics Json
+  createdAt DateTime @default(now())
+  @@index([component, sampledAt])
+  @@index([sampledAt])
+  @@map("infrastructure_metric_samples")
+}
+model ApiMetricBucket {
+  id String @id @default(uuid())
+  bucketKey String @unique
+  bucketStart DateTime
+  method String
+  route String
+  applicationId String?
+  serviceId String?
+  requestCount Int
+  status2xx Int
+  status4xx Int
+  status5xx Int
+  timeoutCount Int
+  errorCount Int
+  concurrentMax Int
+  latencyHistogram Json
+  ttfbHistogram Json?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@index([bucketStart])
+  @@index([route, bucketStart])
+  @@index([applicationId, bucketStart])
+  @@index([serviceId, bucketStart])
+  @@map("api_metric_buckets")
+}
+model DependencyMetricBucket {
+  id String @id @default(uuid())
+  bucketKey String @unique
+  bucketStart DateTime
+  dependency String
+  operation String
+  callCount Int
+  errorCount Int
+  slowCount Int
+  latencyHistogram Json
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@index([bucketStart])
+  @@index([dependency, bucketStart])
+  @@index([operation, bucketStart])
+  @@map("dependency_metric_buckets")
+}
+model MetricRollup {
+  id String @id @default(uuid())
+  rollupKey String @unique
+  interval String
+  source String
+  dimension String
+  bucketStart DateTime
+  metrics Json
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@index([source, interval, bucketStart])
+  @@index([bucketStart])
+  @@map("metric_rollups")
+}
