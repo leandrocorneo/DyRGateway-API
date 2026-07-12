@@ -6,7 +6,9 @@
   "scripts": {
     "dev": "tsx watch src/app/server.ts",
     "build": "tsc",
+    "test": "tsx --test src/monitoring/core/*.test.ts",
     "start": "node dist/app/server.js",
+    "metrics:worker": "tsx watch src/monitoring/worker.ts",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev"
   },

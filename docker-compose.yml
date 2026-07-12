@@ -7,42 +7,144 @@ services:
     ports:
       - "9000:9000"
     environment:
-      - PORT=9000
-      - NODE_ENV=development
-      - DATABASE_URL=postgresql://postgres:password@postgres:5432/dyr_gateway?schema=public
-      - REDIS_HOST=redis
-      - REDIS_PORT=6379
+      PORT: 9000
+      NODE_ENV: development
+      DATABASE_URL: postgresql://postgres:password@postgres:5432/dyr_gateway?schema=public
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      METRICS_INTERVAL_SECONDS: 30
+      METRICS_RETENTION_DAYS: 15
+      METRICS_SPOOL_PATH: /var/lib/dyr-metrics
+      PROXY_TIMEOUT_MS: 30000
+      SLOW_DATABASE_MS: 500
+      SLOW_REDIS_MS: 100
+      SLOW_UPSTREAM_MS: 1000
+    mem_limit: ${GATEWAY_MEMORY_LIMIT:-512m}
+    labels:
+      com.dyrgateway.component: api
     volumes:
       - ./:/app
       - /app/node_modules
-    command: sh -c "npx prisma generate && npm run dev"
+      - metrics_spool:/var/lib/dyr-metrics
+    command: sh -c "npx prisma generate && npx prisma migrate deploy && npm run dev"
     depends_on:
-      - postgres
-      - redis
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://127.0.0.1:9000/api/health/live || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    restart: always
+
+  metrics-worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: DyRGateway-Metrics
+    environment:
+      NODE_ENV: development
+      METRICS_PROCESS_ROLE: worker
+      DATABASE_URL: postgresql://postgres:password@postgres:5432/dyr_gateway?schema=public
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      DOCKER_PROXY_URL: http://docker-proxy:2375
+      API_PROBE_URL: http://gateway:9000/api/health/live
+      METRICS_INTERVAL_SECONDS: 30
+      METRICS_RETENTION_DAYS: 15
+      METRICS_SPOOL_PATH: /var/lib/dyr-metrics
+      SLOW_DATABASE_MS: 500
+    mem_limit: 256m
+    volumes:
+      - ./:/app
+      - /app/node_modules
+      - metrics_spool:/var/lib/dyr-metrics
+    command: sh -c "npx prisma generate && npm run metrics:worker"
+    depends_on:
+      gateway:
+        condition: service_healthy
+      docker-proxy:
+        condition: service_started
+    healthcheck:
+      test: ["CMD-SHELL", "pgrep -f 'tsx.*monitoring/worker' >/dev/null || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    restart: always
+
+  docker-proxy:
+    image: tecnativa/docker-socket-proxy:latest
+    container_name: DyRGateway-DockerProxy
+    environment:
+      CONTAINERS: 1
+      INFO: 1
+      SYSTEM: 1
+      VOLUMES: 1
+      POST: 0
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
     restart: always
 
   postgres:
     image: postgres:15-alpine
     container_name: DyRGateway-Postgres
+    command:
+      - postgres
+      - -c
+      - shared_preload_libraries=pg_stat_statements
+      - -c
+      - track_io_timing=on
+      - -c
+      - compute_query_id=on
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: password
       POSTGRES_DB: dyr_gateway
+    mem_limit: ${POSTGRES_MEMORY_LIMIT:-1g}
+    labels:
+      com.dyrgateway.component: database
     ports:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d dyr_gateway"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
     restart: always
 
   redis:
     image: redis:7-alpine
     container_name: DyRGateway-Redis
+    command:
+      - redis-server
+      - --maxmemory
+      - ${REDIS_MAXMEMORY:-256mb}
+      - --maxmemory-policy
+      - allkeys-lru
+      - --latency-tracking
+      - "yes"
+      - --latency-tracking-info-percentiles
+      - "50 95 99"
+    mem_limit: ${REDIS_MEMORY_LIMIT:-384m}
+    labels:
+      com.dyrgateway.component: redis
     ports:
       - "6379:6379"
     volumes:
       - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
     restart: always
 
 volumes:
   postgres_data:
   redis_data:
+  metrics_spool:
