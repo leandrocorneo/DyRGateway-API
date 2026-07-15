@@ -28,3 +28,4 @@ Thumbs.db
 
 Dockerfile.prod
 docker-compose.prod.yml
+docs/
