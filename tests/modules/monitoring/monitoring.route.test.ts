@@ -36,6 +36,9 @@ test('validates catalog pagination and returns its contract', async () => {
   const stopped = await app.inject({ method: 'GET', url: '/monitoring/containers?state=stopped' });
   assert.equal(stopped.json().items.every((item: any) => item.state !== 'running'), true);
   if (payload.items[0]) {
+    assert.equal(typeof payload.items[0].orchestration.protected, 'boolean');
+    assert.equal(typeof payload.items[0].orchestration.canStart, 'boolean');
+    assert.equal(typeof payload.items[0].orchestration.canStop, 'boolean');
     const detail = await app.inject({ method: 'GET', url: `/monitoring/containers/${payload.items[0].id}?take=1` });
     assert.equal(detail.statusCode, 200);
     assert.equal(detail.json().meta.pagination.take, 1);
