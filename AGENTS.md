@@ -47,7 +47,8 @@ API, motor de proxy reverso e coleta de métricas do DyRGateway. O frontend vive
 - Percentis devem vir de histogramas agregados; nunca calcule p95/p99 pela média de percentis.
 - Ausência de amostra é `unknown`/`null`; não interpole nem transforme em zero.
 - O proxy HTTP e WebSocket é uma superfície crítica. Preserve roteamento, timeout, hijack e encerramento gracioso.
-- O Docker socket só pode ser acessado pelo proxy interno e em modo somente leitura.
+- O Docker socket só pode ser acessado pelos proxies internos com mount somente leitura: `docker-proxy` aceita apenas consultas e `docker-control-proxy` aceita somente start/stop. Nunca combine `CONTAINERS=1` e `POST=1` no mesmo proxy.
+- Valores concretos de ambiente devem existir somente no `.env`; arquivos Compose devem apenas referenciar `${VAR}`, sem duplicar valores, defaults ou segredos inline.
 - Trabalhe com alterações locais existentes. Não reverta arquivos que não pertencem à tarefa.
 
 ## Definição de pronto
