@@ -5,21 +5,29 @@ services:
       dockerfile: Dockerfile
     container_name: DyRGateway
     ports:
-      - "9000:9000"
+      - "${GATEWAY_HOST_PORT}:${PORT}"
     environment:
-      PORT: 9000
-      NODE_ENV: development
-      DATABASE_URL: postgresql://postgres:password@postgres:5432/dyr_gateway?schema=public
-      REDIS_HOST: redis
-      REDIS_PORT: 6379
-      METRICS_INTERVAL_SECONDS: 30
-      METRICS_RETENTION_DAYS: 15
-      METRICS_SPOOL_PATH: /var/lib/dyr-metrics
-      PROXY_TIMEOUT_MS: 30000
-      SLOW_DATABASE_MS: 500
-      SLOW_REDIS_MS: 100
-      SLOW_UPSTREAM_MS: 1000
-    mem_limit: ${GATEWAY_MEMORY_LIMIT:-512m}
+      PORT: ${PORT}
+      NODE_ENV: ${NODE_ENV}
+      JWT_SECRET: ${JWT_SECRET}
+      CORS_ORIGIN: ${CORS_ORIGIN}
+      DATABASE_URL: ${DATABASE_URL}
+      REDIS_HOST: ${REDIS_HOST}
+      REDIS_PORT: ${REDIS_PORT}
+      METRICS_INTERVAL_SECONDS: ${METRICS_INTERVAL_SECONDS}
+      METRICS_RETENTION_DAYS: ${METRICS_RETENTION_DAYS}
+      METRICS_SPOOL_PATH: ${METRICS_SPOOL_PATH}
+      PROXY_TIMEOUT_MS: ${PROXY_TIMEOUT_MS}
+      SLOW_DATABASE_MS: ${SLOW_DATABASE_MS}
+      SLOW_REDIS_MS: ${SLOW_REDIS_MS}
+      SLOW_UPSTREAM_MS: ${SLOW_UPSTREAM_MS}
+      DOCKER_PROXY_URL: ${DOCKER_PROXY_URL}
+      DOCKER_CONTROL_PROXY_URL: ${DOCKER_CONTROL_PROXY_URL}
+      DOCKER_ACTION_TIMEOUT_MS: ${DOCKER_ACTION_TIMEOUT_MS}
+      DOCKER_STOP_TIMEOUT_SECONDS: ${DOCKER_STOP_TIMEOUT_SECONDS}
+      DOCKER_PROTECTED_PROJECTS: ${DOCKER_PROTECTED_PROJECTS}
+      DOCKER_PROTECTED_CONTAINERS: ${DOCKER_PROTECTED_CONTAINERS}
+    mem_limit: ${GATEWAY_MEMORY_LIMIT}
     labels:
       com.dyrgateway.component: api
     volumes:
@@ -32,8 +40,16 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      docker-proxy:
+        condition: service_started
+      docker-control-proxy:
+        condition: service_started
+    networks:
+      - default
+      - docker-monitoring
+      - docker-control
     healthcheck:
-      test: ["CMD-SHELL", "wget -q --spider http://127.0.0.1:9000/api/health/live || exit 1"]
+      test: ["CMD-SHELL", "wget -q --spider http://127.0.0.1:${PORT}/api/health/live || exit 1"]
       interval: 30s
       timeout: 5s
       retries: 3
@@ -46,20 +62,20 @@ services:
       dockerfile: Dockerfile
     container_name: DyRGateway-Metrics
     environment:
-      NODE_ENV: development
-      METRICS_PROCESS_ROLE: worker
-      DATABASE_URL: postgresql://postgres:password@postgres:5432/dyr_gateway?schema=public
-      REDIS_HOST: redis
-      REDIS_PORT: 6379
-      DOCKER_PROXY_URL: http://docker-proxy:2375
-      DOCKER_METRICS_CONCURRENCY: 6
-      DOCKER_METRICS_TIMEOUT_MS: 3000
-      API_PROBE_URL: http://gateway:9000/api/health/live
-      METRICS_INTERVAL_SECONDS: 30
-      METRICS_RETENTION_DAYS: 15
-      METRICS_SPOOL_PATH: /var/lib/dyr-metrics
-      SLOW_DATABASE_MS: 500
-    mem_limit: 256m
+      NODE_ENV: ${NODE_ENV}
+      METRICS_PROCESS_ROLE: ${METRICS_PROCESS_ROLE}
+      DATABASE_URL: ${DATABASE_URL}
+      REDIS_HOST: ${REDIS_HOST}
+      REDIS_PORT: ${REDIS_PORT}
+      DOCKER_PROXY_URL: ${DOCKER_PROXY_URL}
+      DOCKER_METRICS_CONCURRENCY: ${DOCKER_METRICS_CONCURRENCY}
+      DOCKER_METRICS_TIMEOUT_MS: ${DOCKER_METRICS_TIMEOUT_MS}
+      API_PROBE_URL: ${API_PROBE_URL}
+      METRICS_INTERVAL_SECONDS: ${METRICS_INTERVAL_SECONDS}
+      METRICS_RETENTION_DAYS: ${METRICS_RETENTION_DAYS}
+      METRICS_SPOOL_PATH: ${METRICS_SPOOL_PATH}
+      SLOW_DATABASE_MS: ${SLOW_DATABASE_MS}
+    mem_limit: ${METRICS_WORKER_MEMORY_LIMIT}
     volumes:
       - ./:/app
       - /app/node_modules
@@ -70,6 +86,9 @@ services:
         condition: service_healthy
       docker-proxy:
         condition: service_started
+    networks:
+      - default
+      - docker-monitoring
     healthcheck:
       test: ["CMD-SHELL", "pgrep -f 'tsx.*monitoring/worker' >/dev/null || exit 1"]
       interval: 30s
@@ -78,16 +97,37 @@ services:
     restart: always
 
   docker-proxy:
-    image: tecnativa/docker-socket-proxy:latest
+    image: ${DOCKER_PROXY_IMAGE}
     container_name: DyRGateway-DockerProxy
     environment:
-      CONTAINERS: 1
-      INFO: 1
-      SYSTEM: 1
-      VOLUMES: 1
-      POST: 0
+      CONTAINERS: ${DOCKER_PROXY_CONTAINERS}
+      INFO: ${DOCKER_PROXY_INFO}
+      SYSTEM: ${DOCKER_PROXY_SYSTEM}
+      VOLUMES: ${DOCKER_PROXY_VOLUMES}
+      POST: ${DOCKER_PROXY_POST}
+      EXEC: ${DOCKER_PROXY_EXEC}
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - docker-monitoring
+    restart: always
+
+  docker-control-proxy:
+    image: ${DOCKER_PROXY_IMAGE}
+    container_name: DyRGateway-DockerControlProxy
+    environment:
+      CONTAINERS: ${DOCKER_CONTROL_PROXY_CONTAINERS}
+      POST: ${DOCKER_CONTROL_PROXY_POST}
+      ALLOW_START: ${DOCKER_CONTROL_PROXY_ALLOW_START}
+      ALLOW_STOP: ${DOCKER_CONTROL_PROXY_ALLOW_STOP}
+      ALLOW_RESTARTS: ${DOCKER_CONTROL_PROXY_ALLOW_RESTARTS}
+      ALLOW_PAUSE: ${DOCKER_CONTROL_PROXY_ALLOW_PAUSE}
+      ALLOW_UNPAUSE: ${DOCKER_CONTROL_PROXY_ALLOW_UNPAUSE}
+      EXEC: ${DOCKER_CONTROL_PROXY_EXEC}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - docker-control
     restart: always
 
   postgres:
@@ -102,18 +142,18 @@ services:
       - -c
       - compute_query_id=on
     environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: password
-      POSTGRES_DB: dyr_gateway
-    mem_limit: ${POSTGRES_MEMORY_LIMIT:-1g}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    mem_limit: ${POSTGRES_MEMORY_LIMIT}
     labels:
       com.dyrgateway.component: database
     ports:
-      - "5432:5432"
+      - "${POSTGRES_HOST_PORT}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres -d dyr_gateway"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -125,18 +165,18 @@ services:
     command:
       - redis-server
       - --maxmemory
-      - ${REDIS_MAXMEMORY:-256mb}
+      - ${REDIS_MAXMEMORY}
       - --maxmemory-policy
-      - allkeys-lru
+      - ${REDIS_MAXMEMORY_POLICY}
       - --latency-tracking
-      - "yes"
+      - ${REDIS_LATENCY_TRACKING}
       - --latency-tracking-info-percentiles
-      - "50 95 99"
-    mem_limit: ${REDIS_MEMORY_LIMIT:-384m}
+      - ${REDIS_LATENCY_PERCENTILES}
+    mem_limit: ${REDIS_MEMORY_LIMIT}
     labels:
       com.dyrgateway.component: redis
     ports:
-      - "6379:6379"
+      - "${REDIS_HOST_PORT}:6379"
     volumes:
       - redis_data:/data
     healthcheck:
@@ -150,3 +190,9 @@ volumes:
   postgres_data:
   redis_data:
   metrics_spool:
+
+networks:
+  docker-monitoring:
+    internal: true
+  docker-control:
+    internal: true
