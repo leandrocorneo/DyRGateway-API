@@ -1,5 +1,7 @@
+import { Prisma } from '@prisma/client';
 import { prisma } from '../../database/prisma';
 import { HistogramSnapshot, createHistogram, histogramSummary, mergeHistograms } from '../../monitoring/core/histogram';
+import { ContainerCatalogQuery, ContainerHistoryQuery, parseContainerCatalogQuery, parseContainerHistoryQuery } from './monitoring.types';
 
 const RANGES: Record<string, number> = {
   '15m': 15 * 60, '1h': 60 * 60, '6h': 6 * 60 * 60,
@@ -21,6 +23,37 @@ const chooseStep = (seconds: number) => {
 
 const floorTime = (date: Date, step: number) =>
   new Date(Math.floor(date.getTime() / (step * 1000)) * step * 1000).toISOString();
+
+const asMetrics = (value: unknown): Record<string, unknown> =>
+  value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {};
+
+const sampleSnapshot = (sample: any) => sample ? {
+  ...asMetrics(sample.metrics),
+  sampledAt: sample.sampledAt.toISOString(),
+  status: sample.status,
+  instanceId: sample.containerInstanceId,
+} : null;
+
+const containerMetadata = (container: any) => ({
+  id: container.id,
+  identityKey: container.identityKey,
+  identitySource: container.identitySource,
+  name: container.name,
+  image: container.image,
+  compose: container.composeProject ? {
+    project: container.composeProject,
+    service: container.composeService,
+    containerNumber: container.composeContainerNumber,
+  } : null,
+  currentContainerId: container.currentContainerId,
+  state: container.state,
+  health: container.health,
+  mounts: container.mounts,
+  containerCreatedAt: container.containerCreatedAt?.toISOString() || null,
+  instanceStartedAt: container.instanceStartedAt?.toISOString() || null,
+  firstSeenAt: container.firstSeenAt.toISOString(),
+  lastSeenAt: container.lastSeenAt.toISOString(),
+});
 
 export default class MonitoringService {
   parseRange(raw?: string) {
@@ -83,10 +116,13 @@ export default class MonitoringService {
     };
   }
 
-  async infrastructure(component: string | null, rawRange?: string) {
+  async infrastructure(component: string | null, rawRange?: string, exactComponents?: string[]) {
     const window = this.parseRange(rawRange);
     const rows = await prisma.infrastructureMetricSample.findMany({
-      where: { sampledAt: { gte: window.from }, ...(component ? { component: { startsWith: component } } : {}) },
+      where: {
+        sampledAt: { gte: window.from },
+        ...(exactComponents ? { component: { in: exactComponents } } : component ? { component: { startsWith: component } } : {}),
+      },
       orderBy: { sampledAt: 'asc' },
     });
     const latest = new Map<string, typeof rows[number]>();
@@ -107,6 +143,133 @@ export default class MonitoringService {
     };
   }
 
+  async containers(query: ContainerCatalogQuery) {
+    const parsed = parseContainerCatalogQuery(query);
+    const scopeWhere: Prisma.MonitoredContainerWhereInput = {
+      present: true,
+      ...(parsed.project ? { composeProject: parsed.project } : {}),
+      ...(parsed.search ? {
+        OR: [
+          { name: { contains: parsed.search, mode: 'insensitive' } },
+          { image: { contains: parsed.search, mode: 'insensitive' } },
+          { composeProject: { contains: parsed.search, mode: 'insensitive' } },
+          { composeService: { contains: parsed.search, mode: 'insensitive' } },
+        ],
+      } : {}),
+    };
+    const itemWhere: Prisma.MonitoredContainerWhereInput = {
+      ...scopeWhere,
+      ...(parsed.state === 'running' ? { state: 'running' } : parsed.state === 'stopped' ? { state: { not: 'running' } } : {}),
+    };
+    const [containers, total, scopeTotal, running, healthy, unhealthy] = await Promise.all([
+      prisma.monitoredContainer.findMany({
+        where: itemWhere,
+        orderBy: [
+          { composeProject: 'asc' }, { composeService: 'asc' },
+          { composeContainerNumber: 'asc' }, { name: 'asc' }, { id: 'asc' },
+        ],
+        skip: parsed.skip,
+        take: parsed.take,
+        include: { samples: { orderBy: { sampledAt: 'desc' }, take: 1 } },
+      }),
+      prisma.monitoredContainer.count({ where: itemWhere }),
+      prisma.monitoredContainer.count({ where: scopeWhere }),
+      prisma.monitoredContainer.count({ where: { ...scopeWhere, state: 'running' } }),
+      prisma.monitoredContainer.count({ where: { ...scopeWhere, state: 'running', health: 'healthy' } }),
+      prisma.monitoredContainer.count({ where: { ...scopeWhere, state: 'running', health: 'unhealthy' } }),
+    ]);
+    return {
+      meta: {
+        generatedAt: new Date().toISOString(),
+        pagination: { skip: parsed.skip, take: parsed.take, total, hasMore: parsed.skip + containers.length < total },
+        filters: { state: parsed.state, project: parsed.project || null, search: parsed.search || null },
+      },
+      summary: {
+        total: scopeTotal,
+        running,
+        stopped: scopeTotal - running,
+        healthy,
+        unhealthy,
+        unknown: Math.max(0, running - healthy - unhealthy),
+      },
+      items: containers.map((container) => ({
+        ...containerMetadata(container),
+        current: sampleSnapshot(container.samples[0]),
+      })),
+    };
+  }
+
+  async containerHistory(id: string, query: ContainerHistoryQuery) {
+    const parsed = parseContainerHistoryQuery(query);
+    const container = await prisma.monitoredContainer.findFirst({
+      where: { id, present: true },
+      include: { samples: { orderBy: { sampledAt: 'desc' }, take: 1 } },
+    });
+    if (!container) return null;
+
+    const window = this.parseRange(parsed.range);
+    type HistoryRow = { sampledAt: Date; status: string; instanceId: string | null; metrics: unknown };
+    let historyRows: HistoryRow[] = [];
+    if (window.stepSeconds >= 300) {
+      const interval = window.stepSeconds >= 3600 ? '1h' : '5m';
+      const rollups = await prisma.metricRollup.findMany({
+        where: {
+          source: 'infrastructure', interval, dimension: 'container:' + id,
+          bucketStart: { gte: window.from, lte: window.to },
+        },
+        orderBy: { bucketStart: 'asc' },
+      });
+      historyRows = rollups.map((row) => {
+        const metrics = asMetrics(row.metrics);
+        return {
+          sampledAt: row.bucketStart,
+          status: typeof metrics.status === 'string' ? metrics.status : 'unknown',
+          instanceId: typeof metrics.instanceId === 'string' ? metrics.instanceId : null,
+          metrics,
+        };
+      });
+    }
+    if (historyRows.length === 0) {
+      const rows = await prisma.infrastructureMetricSample.findMany({
+        where: { monitoredContainerId: id, sampledAt: { gte: window.from, lte: window.to } },
+        orderBy: { sampledAt: 'asc' },
+      });
+      historyRows = rows.map((row) => ({
+        sampledAt: row.sampledAt,
+        status: row.status,
+        instanceId: row.containerInstanceId,
+        metrics: row.metrics,
+      }));
+    }
+    const buckets = new Map<string, HistoryRow>();
+    for (const row of historyRows) buckets.set(floorTime(row.sampledAt, window.stepSeconds), row);
+    const points = [...buckets.entries()].map(([timestamp, row]) => ({
+      ...asMetrics(row.metrics),
+      timestamp,
+      status: row.status,
+      instanceId: row.instanceId,
+    }));
+    const page = [...points].reverse().slice(parsed.skip, parsed.skip + parsed.take).reverse();
+    return {
+      meta: {
+        ...this.meta(window, points.length === 0),
+        pagination: {
+          skip: parsed.skip,
+          take: parsed.take,
+          total: points.length,
+          hasMore: parsed.skip + page.length < points.length,
+        },
+      },
+      container: containerMetadata(container),
+      current: sampleSnapshot(container.samples[0]),
+      summary: {
+        points: points.length,
+        firstSampleAt: points[0]?.timestamp || null,
+        lastSampleAt: points.at(-1)?.timestamp || null,
+      },
+      series: page,
+    };
+  }
   async dependencies(dependency: string, rawRange?: string) {
     const window = this.parseRange(rawRange);
     const rows = await prisma.dependencyMetricBucket.findMany({ where: { dependency, bucketStart: { gte: window.from } }, orderBy: { bucketStart: 'asc' } });
@@ -146,7 +309,7 @@ export default class MonitoringService {
   }
 
   async overview(rawRange?: string) {
-    const [api, infrastructure] = await Promise.all([this.api(rawRange), this.infrastructure(null, rawRange)]);
+    const [api, infrastructure] = await Promise.all([this.api(rawRange), this.infrastructure(null, rawRange, ['api', 'redis', 'database'])]);
     return {
       meta: api.meta,
       current: { api: api.current, infrastructure: infrastructure.current },
