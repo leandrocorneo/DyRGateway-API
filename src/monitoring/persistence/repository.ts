@@ -1,6 +1,7 @@
 import { Prisma } from '@prisma/client';
 import { prisma } from '../../database/prisma';
 import { HistogramSnapshot, mergeHistograms } from '../core/histogram';
+import { deleteExpiredMonitoredContainers } from './containers';
 
 export type ApiBucketRecord = {
   bucketKey: string; bucketStart: Date; method: string; route: string;
@@ -38,8 +39,23 @@ export const writeDependencyBucket = async (item: DependencyBucketRecord) => {
   await prisma.dependencyMetricBucket.upsert({ where: { bucketKey: item.bucketKey }, create: { bucketKey: item.bucketKey, ...data }, update: data });
 };
 
-export const writeInfrastructureSample = async (item: { sampleKey: string; component: string; status: string; sampledAt: Date | string; metrics: unknown }) => {
-  const data = { component: item.component, status: item.status, sampledAt: new Date(item.sampledAt), metrics: json(item.metrics) };
+export const writeInfrastructureSample = async (item: {
+  sampleKey: string;
+  component: string;
+  status: string;
+  sampledAt: Date | string;
+  metrics: unknown;
+  monitoredContainerId?: string | null;
+  containerInstanceId?: string | null;
+}) => {
+  const data = {
+    component: item.component,
+    status: item.status,
+    sampledAt: new Date(item.sampledAt),
+    metrics: json(item.metrics),
+    monitoredContainerId: item.monitoredContainerId ?? null,
+    containerInstanceId: item.containerInstanceId ?? null,
+  };
   await prisma.infrastructureMetricSample.upsert({ where: { sampleKey: item.sampleKey }, create: { sampleKey: item.sampleKey, ...data }, update: data });
 };
 
@@ -51,6 +67,7 @@ export const deleteExpiredMetrics = async (retentionDays: number) => {
     prisma.dependencyMetricBucket.deleteMany({ where: { bucketStart: { lt: before } } }),
     prisma.metricRollup.deleteMany({ where: { bucketStart: { lt: before } } }),
   ]);
+  await deleteExpiredMonitoredContainers(before);
 };
 
 
@@ -141,9 +158,10 @@ export const refreshMetricRollups = async (now = new Date()) => {
         where: { rollupKey: interval.name + '|infrastructure|' + dimension + '|' + start.toISOString() },
         create: {
           rollupKey: interval.name + '|infrastructure|' + dimension + '|' + start.toISOString(),
-          interval: interval.name, source: 'infrastructure', dimension, bucketStart: start, metrics: json(row.metrics),
+          interval: interval.name, source: 'infrastructure', dimension, bucketStart: start,
+          metrics: json({ status: row.status, instanceId: row.containerInstanceId, ...(row.metrics as object) }),
         },
-        update: { metrics: json(row.metrics) },
+        update: { metrics: json({ status: row.status, instanceId: row.containerInstanceId, ...(row.metrics as object) }) },
       });
     }
   }

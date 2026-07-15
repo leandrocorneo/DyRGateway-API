@@ -76,10 +76,45 @@ model InfrastructureMetricSample {
   status String
   sampledAt DateTime
   metrics Json
+  monitoredContainerId String?
+  containerInstanceId String?
   createdAt DateTime @default(now())
+
+  monitoredContainer MonitoredContainer? @relation(fields: [monitoredContainerId], references: [id], onDelete: Cascade)
+
   @@index([component, sampledAt])
+  @@index([monitoredContainerId, sampledAt])
   @@index([sampledAt])
   @@map("infrastructure_metric_samples")
+}
+
+model MonitoredContainer {
+  id String @id
+  identityKey String @unique
+  identitySource String
+  name String
+  image String
+  composeProject String?
+  composeService String?
+  composeContainerNumber Int?
+  currentContainerId String
+  state String
+  health String?
+  present Boolean @default(true)
+  mounts Json
+  containerCreatedAt DateTime?
+  instanceStartedAt DateTime?
+  firstSeenAt DateTime
+  lastSeenAt DateTime
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  samples InfrastructureMetricSample[]
+
+  @@index([present, state])
+  @@index([composeProject, composeService, composeContainerNumber])
+  @@index([lastSeenAt])
+  @@map("monitored_containers")
 }
 model ApiMetricBucket {
   id String @id @default(uuid())
