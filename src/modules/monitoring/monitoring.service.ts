@@ -1,6 +1,8 @@
 import { Prisma } from '@prisma/client';
+import { config } from '../../config/env';
 import { prisma } from '../../database/prisma';
 import { HistogramSnapshot, createHistogram, histogramSummary, mergeHistograms } from '../../monitoring/core/histogram';
+import { describeContainerOrchestration } from '../orchestration/orchestration.types';
 import { ContainerCatalogQuery, ContainerHistoryQuery, parseContainerCatalogQuery, parseContainerHistoryQuery } from './monitoring.types';
 
 const RANGES: Record<string, number> = {
@@ -53,6 +55,14 @@ const containerMetadata = (container: any) => ({
   instanceStartedAt: container.instanceStartedAt?.toISOString() || null,
   firstSeenAt: container.firstSeenAt.toISOString(),
   lastSeenAt: container.lastSeenAt.toISOString(),
+  orchestration: describeContainerOrchestration({
+    name: container.name,
+    state: container.state,
+    composeProject: container.composeProject,
+  }, {
+    protectedProjects: config.docker.protectedProjects,
+    protectedContainerNames: config.docker.protectedContainerNames,
+  }),
 });
 
 export default class MonitoringService {
