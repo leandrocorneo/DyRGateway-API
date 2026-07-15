@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createHistogram, histogramQuantile, mergeHistograms, observeHistogram } from './histogram';
+import { createHistogram, histogramQuantile, mergeHistograms, observeHistogram } from '../../../src/monitoring/core/histogram';
 
 test('computes percentiles from merged bucket counts', () => {
   const first = createHistogram();
