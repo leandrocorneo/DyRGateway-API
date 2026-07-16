@@ -2,8 +2,20 @@ import { Prisma } from '@prisma/client';
 import { config } from '../../config/env';
 import { prisma } from '../../database/prisma';
 import { HistogramSnapshot, createHistogram, histogramSummary, mergeHistograms } from '../../monitoring/core/histogram';
-import { describeContainerOrchestration } from '../orchestration/orchestration.types';
-import { ContainerCatalogQuery, ContainerHistoryQuery, parseContainerCatalogQuery, parseContainerHistoryQuery } from './monitoring.types';
+import {
+  composeProjectGroupId,
+  describeContainerGroupOrchestration,
+  describeContainerOrchestration,
+  summarizeContainerGroup,
+} from '../orchestration/orchestration.types';
+import {
+  ContainerCatalogQuery,
+  ContainerGroupCatalogQuery,
+  ContainerHistoryQuery,
+  parseContainerCatalogQuery,
+  parseContainerGroupCatalogQuery,
+  parseContainerHistoryQuery,
+} from './monitoring.types';
 
 const RANGES: Record<string, number> = {
   '15m': 15 * 60, '1h': 60 * 60, '6h': 6 * 60 * 60,
@@ -153,6 +165,120 @@ export default class MonitoringService {
     };
   }
 
+  async containerGroups(query: ContainerGroupCatalogQuery) {
+    const parsed = parseContainerGroupCatalogQuery(query);
+    const policy = {
+      protectedProjects: config.docker.protectedProjects,
+      protectedContainerNames: config.docker.protectedContainerNames,
+    };
+    const containers = await prisma.monitoredContainer.findMany({
+      where: { present: true },
+      orderBy: [
+        { composeProject: 'asc' }, { composeService: 'asc' },
+        { composeContainerNumber: 'asc' }, { name: 'asc' }, { id: 'asc' },
+      ],
+      include: { samples: { orderBy: { sampledAt: 'desc' }, take: 1 } },
+    });
+    const composeGroups = new Map<string, typeof containers>();
+    const standalone = [] as typeof containers;
+    for (const container of containers) {
+      if (!container.composeProject) {
+        standalone.push(container);
+        continue;
+      }
+      const key = container.composeProject.toLowerCase();
+      const group = composeGroups.get(key) || [];
+      group.push(container);
+      composeGroups.set(key, group);
+    }
+
+    const composeItems = [...composeGroups.values()].map((group) => {
+      const project = group[0].composeProject!;
+      const subjects = group.map((container) => ({
+        name: container.name,
+        state: container.state,
+        health: container.health,
+        composeProject: project,
+      }));
+      return {
+        kind: 'compose' as const,
+        id: composeProjectGroupId(project),
+        project,
+        summary: summarizeContainerGroup(subjects),
+        orchestration: describeContainerGroupOrchestration(subjects, policy),
+        containers: group.map((container) => ({
+          ...containerMetadata(container),
+          current: sampleSnapshot(container.samples[0]),
+        })),
+      };
+    });
+    const standaloneItems = standalone.map((container) => ({
+      kind: 'standalone' as const,
+      id: container.id,
+      container: {
+        ...containerMetadata(container),
+        current: sampleSnapshot(container.samples[0]),
+      },
+    }));
+    const search = parsed.search?.toLowerCase();
+    const matchesContainer = (container: any) => !search || [
+      container.name, container.image, container.composeProject, container.composeService,
+    ].some((value) => typeof value === 'string' && value.toLowerCase().includes(search));
+    const searchedCompose = composeItems.filter((item) =>
+      !search || item.project.toLowerCase().includes(search) || item.containers.some((container) =>
+        [container.name, container.image, container.compose?.service].some((value) =>
+          typeof value === 'string' && value.toLowerCase().includes(search))));
+    const searchedStandalone = standaloneItems.filter((item) => matchesContainer(item.container));
+    const searchedItems = [
+      ...searchedCompose.sort((left, right) => left.project.localeCompare(right.project)),
+      ...searchedStandalone.sort((left, right) => left.container.name.localeCompare(right.container.name)),
+    ];
+    const stateMatches = (item: typeof searchedItems[number]) => {
+      if (parsed.state === 'all') return true;
+      if (item.kind === 'compose') {
+        return parsed.state === 'running' ? item.summary.running > 0 : item.summary.stopped > 0;
+      }
+      return parsed.state === 'running'
+        ? item.container.state === 'running'
+        : item.container.state !== 'running';
+    };
+    const filteredItems = searchedItems.filter(stateMatches);
+    const page = filteredItems.slice(parsed.skip, parsed.skip + parsed.take);
+    const scopedContainers = searchedItems.flatMap((item) =>
+      item.kind === 'compose' ? item.containers : [item.container]);
+    const scopedSubjects = scopedContainers.map((container) => ({
+      name: container.name,
+      state: container.state,
+      health: container.health,
+      composeProject: container.compose?.project || null,
+    }));
+    const totals = summarizeContainerGroup(scopedSubjects);
+
+    return {
+      meta: {
+        generatedAt: new Date().toISOString(),
+        pagination: {
+          skip: parsed.skip,
+          take: parsed.take,
+          total: filteredItems.length,
+          hasMore: parsed.skip + page.length < filteredItems.length,
+        },
+        filters: { state: parsed.state, search: parsed.search || null },
+      },
+      summary: {
+        projects: searchedCompose.length,
+        standalone: searchedStandalone.length,
+        containers: totals.total,
+        running: totals.running,
+        stopped: totals.stopped,
+        healthy: totals.healthy,
+        unhealthy: totals.unhealthy,
+        unknown: totals.unknown,
+        protectedProjects: searchedCompose.filter((item) => item.orchestration.protected).length,
+      },
+      items: page,
+    };
+  }
   async containers(query: ContainerCatalogQuery) {
     const parsed = parseContainerCatalogQuery(query);
     const scopeWhere: Prisma.MonitoredContainerWhereInput = {

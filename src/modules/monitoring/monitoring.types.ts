@@ -8,6 +8,13 @@ export type ContainerCatalogQuery = {
   take?: string | number;
 };
 
+export type ContainerGroupCatalogQuery = {
+  state?: string;
+  search?: string;
+  skip?: string | number;
+  take?: string | number;
+};
+
 export type ContainerHistoryQuery = {
   range?: string;
   skip?: string | number;
@@ -53,3 +60,16 @@ export const parseContainerHistoryQuery = (query: ContainerHistoryQuery) => ({
   skip: parseInteger(query.skip, 0, 'skip', Number.MAX_SAFE_INTEGER),
   take: parseInteger(query.take, 120, 'take', 240),
 });
+
+export const parseContainerGroupCatalogQuery = (query: ContainerGroupCatalogQuery) => {
+  const state = (query.state || 'all') as ContainerCatalogState;
+  if (!['running', 'stopped', 'all'].includes(state)) {
+    throw new MonitoringQueryError('state must be running, stopped or all');
+  }
+  return {
+    state,
+    search: parseText(query.search, 'search'),
+    skip: parseInteger(query.skip, 0, 'skip', Number.MAX_SAFE_INTEGER),
+    take: parseInteger(query.take, 10, 'take', 50),
+  };
+};
