@@ -61,6 +61,10 @@ Entidades de monitoramento:
 
 Toda mudança de schema exige migration em `prisma/migrations`.
 
+## Orquestração agrupada
+
+O catálogo agrupado usa o inventário persistido para métricas e paginação, mas ações de projeto resolvem os containers novamente no daemon. A identidade do grupo deriva do nome normalizado do projeto Compose. Locks compartilhados impedem concorrência entre ações coletivas e individuais.
+
 ## Segurança e compatibilidade
 
 - O JWT é transportado no cookie HTTP-only `access_token`.

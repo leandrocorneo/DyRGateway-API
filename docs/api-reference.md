@@ -64,6 +64,9 @@ Todos os endpoints abaixo são autenticados:
 - `GET /monitoring/database`
 - `GET /monitoring/containers`
 - `GET /monitoring/containers/:id`
+- `GET /monitoring/container-groups`
+- `POST /monitoring/container-groups/:id/start`
+- `POST /monitoring/container-groups/:id/stop`
 - `POST /monitoring/containers/:id/start`
 - `POST /monitoring/containers/:id/stop`
 
@@ -82,6 +85,14 @@ Os endpoints de API, Redis e banco mantêm o contrato comum com `meta`, `current
 A resposta contém `meta.generatedAt`, filtros, paginação, `summary` e `items`. Cada item expõe somente identidade, metadados Compose permitidos, estado, última amostra e `orchestration` com `protected`, `canStart`, `canStop` e `reason`. Labels, comandos, variáveis e configurações completas do Docker não são retornados.
 
 `stopped` agrupa todo container existente cujo estado não seja `running`. Containers removidos deixam o catálogo. O parâmetro legado `container` não é aceito.
+
+### Catálogo agrupado e ações de projeto
+
+`GET /monitoring/container-groups` pagina projetos Compose e containers standalone como itens de primeiro nível. Aceita `state=all|running|stopped`, `search`, `skip` e `take` até 50. Projetos retornam resumo agregado, permissões e todos os containers existentes.
+
+`POST /monitoring/container-groups/:id/start` e `POST /monitoring/container-groups/:id/stop` não aceitam body. As ações operam todos os containers existentes do projeto, continuam após falhas individuais e retornam `partial` e um resultado por container. Não criam serviços removidos nem executam `docker compose up`.
+
+Projetos protegidos retornam `403`; grupos removidos retornam `404`; ações concorrentes retornam `409`. Falhas individuais permanecem no payload `200` da ação coletiva.
 
 ### Histórico de um container
 

@@ -51,6 +51,12 @@ A coleta usa concorrência limitada por `DOCKER_METRICS_CONCURRENCY`, default 6,
 
 O catálogo persistente fica em `MonitoredContainer`. Amostras referenciam o UUID lógico e guardam o ID da instância para identificar resets de contadores. Metadados sensíveis do inspect não são persistidos.
 
+### Visão agrupada
+
+`/monitoring/container-groups` organiza o inventário por projeto Compose e pagina projetos/standalone como itens de primeiro nível. O filtro de estado seleciona grupos relevantes, mas cada grupo sempre inclui todos os seus containers para manter a visão operacional completa.
+
+As permissões do grupo são agregadas dos filhos. Projetos parcialmente ativos podem oferecer start e stop simultaneamente. Métricas continuam pertencendo aos containers individuais; o grupo agrega somente contagens de estado e health.
+
 ## Histogramas e agregação
 
 Faixas fixas de latência são acumuladas e mescladas antes do cálculo de percentis. Nunca obtenha percentis por média de percentis parciais.
