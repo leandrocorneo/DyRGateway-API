@@ -1,3 +1,5 @@
+import { containerTargetId } from '../../monitoring/core/container';
+
 export type ContainerOrchestrationReason =
   | 'protected'
   | 'already-running'
@@ -15,6 +17,7 @@ export type ContainerOrchestration = {
 export type ContainerOrchestrationSubject = {
   name: string;
   state: string;
+  health?: string | null;
   composeProject?: string | null;
 };
 
@@ -23,8 +26,20 @@ export type ContainerOrchestrationPolicy = {
   protectedContainerNames: readonly string[];
 };
 
+export type ContainerGroupSummary = {
+  total: number;
+  running: number;
+  stopped: number;
+  healthy: number;
+  unhealthy: number;
+  unknown: number;
+};
+
 const normalizedSet = (values: readonly string[]) =>
   new Set(values.map((value) => value.trim().toLowerCase()).filter(Boolean));
+
+export const composeProjectGroupId = (project: string) =>
+  containerTargetId('compose-project:' + project.trim().toLowerCase());
 
 export const describeContainerOrchestration = (
   container: ContainerOrchestrationSubject,
@@ -51,6 +66,40 @@ export const describeContainerOrchestration = (
   return { protected: false, canStart: false, canStop: false, reason: 'unsupported-state' };
 };
 
+export const summarizeContainerGroup = (containers: ContainerOrchestrationSubject[]): ContainerGroupSummary => {
+  const running = containers.filter((container) => container.state.toLowerCase() === 'running').length;
+  const healthy = containers.filter((container) => container.state.toLowerCase() === 'running' && container.health === 'healthy').length;
+  const unhealthy = containers.filter((container) => container.state.toLowerCase() === 'running' && container.health === 'unhealthy').length;
+  return {
+    total: containers.length,
+    running,
+    stopped: containers.length - running,
+    healthy,
+    unhealthy,
+    unknown: Math.max(0, running - healthy - unhealthy),
+  };
+};
+
+export const describeContainerGroupOrchestration = (
+  containers: ContainerOrchestrationSubject[],
+  policy: ContainerOrchestrationPolicy,
+): ContainerOrchestration => {
+  const permissions = containers.map((container) => describeContainerOrchestration(container, policy));
+  if (permissions.some((permission) => permission.protected)) {
+    return { protected: true, canStart: false, canStop: false, reason: 'protected' };
+  }
+  const canStart = permissions.some((permission) => permission.canStart);
+  const canStop = permissions.some((permission) => permission.canStop);
+  const reason: ContainerOrchestrationReason = canStart && canStop
+    ? null
+    : canStop
+      ? 'already-running'
+      : canStart
+        ? 'already-stopped'
+        : 'unsupported-state';
+  return { protected: false, canStart, canStop, reason };
+};
+
 export type ContainerAction = 'start' | 'stop';
 
 export type ContainerActionResponse = {
@@ -66,4 +115,30 @@ export type ContainerActionResponse = {
     health: string | null;
   };
   orchestration: ContainerOrchestration;
+};
+
+export type ContainerGroupActionResult = {
+  containerId: string;
+  name: string;
+  instanceId: string;
+  previousState: string;
+  state: string;
+  health: string | null;
+  status: 'changed' | 'unchanged' | 'failed';
+  orchestration: ContainerOrchestration;
+  error: { code: string; message: string } | null;
+};
+
+export type ContainerGroupActionResponse = {
+  action: ContainerAction;
+  changed: boolean;
+  partial: boolean;
+  completedAt: string;
+  group: {
+    id: string;
+    project: string;
+    summary: ContainerGroupSummary;
+    orchestration: ContainerOrchestration;
+  };
+  results: ContainerGroupActionResult[];
 };

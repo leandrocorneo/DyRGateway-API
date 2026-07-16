@@ -28,6 +28,7 @@ export const config = {
     controlProxyUrl: process.env.DOCKER_CONTROL_PROXY_URL || 'http://docker-control-proxy:2375',
     actionTimeoutMs: parseInt(process.env.DOCKER_ACTION_TIMEOUT_MS || '15000', 10),
     stopTimeoutSeconds: parseInt(process.env.DOCKER_STOP_TIMEOUT_SECONDS || '10', 10),
+    groupActionConcurrency: parseInt(process.env.DOCKER_GROUP_ACTION_CONCURRENCY || '6', 10),
     protectedProjects: csv(process.env.DOCKER_PROTECTED_PROJECTS, 'dyrgatewayapi,dyrgateway'),
     protectedContainerNames: csv(
       process.env.DOCKER_PROTECTED_CONTAINERS,

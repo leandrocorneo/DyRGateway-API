@@ -3,13 +3,19 @@ import { prisma } from '../../database/prisma';
 import {
   DockerContainerSummary,
   getContainerIdentity,
+  mapWithConcurrency,
   selectCanonicalContainers,
 } from '../../monitoring/core/container';
 import {
   ContainerAction,
   ContainerActionResponse,
+  ContainerGroupActionResponse,
+  ContainerGroupActionResult,
   ContainerOrchestrationPolicy,
+  composeProjectGroupId,
+  describeContainerGroupOrchestration,
   describeContainerOrchestration,
+  summarizeContainerGroup,
 } from './orchestration.types';
 
 type DockerContainerInspect = {
@@ -40,6 +46,7 @@ type ServiceOptions = {
   policy?: ContainerOrchestrationPolicy;
   actionTimeoutMs?: number;
   stopTimeoutSeconds?: number;
+  groupActionConcurrency?: number;
   persistState?: (id: string, state: PersistedState) => Promise<void>;
   now?: () => Date;
 };
@@ -47,6 +54,7 @@ type ServiceOptions = {
 export type OrchestrationErrorCode =
   | 'CONTAINER_PROTECTED'
   | 'CONTAINER_NOT_FOUND'
+  | 'GROUP_NOT_FOUND'
   | 'ACTION_IN_PROGRESS'
   | 'UNSUPPORTED_CONTAINER_STATE'
   | 'DOCKER_DAEMON_ERROR'
@@ -143,9 +151,11 @@ export default class OrchestrationService {
   private readonly client: DockerControlClient;
   private readonly policy: ContainerOrchestrationPolicy;
   private readonly stopTimeoutSeconds: number;
+  private readonly groupActionConcurrency: number;
   private readonly persistState: (id: string, state: PersistedState) => Promise<void>;
   private readonly now: () => Date;
-  private readonly locks = new Set<string>();
+  private readonly containerLocks = new Set<string>();
+  private readonly groupLocks = new Set<string>();
 
   constructor(options: ServiceOptions = {}) {
     this.client = options.client || createDockerControlClient(undefined, undefined, options.actionTimeoutMs);
@@ -154,35 +164,125 @@ export default class OrchestrationService {
       protectedContainerNames: config.docker.protectedContainerNames,
     };
     this.stopTimeoutSeconds = Math.max(1, options.stopTimeoutSeconds ?? config.docker.stopTimeoutSeconds);
+    this.groupActionConcurrency = Math.max(1, Math.floor(options.groupActionConcurrency ?? config.docker.groupActionConcurrency));
     this.persistState = options.persistState || defaultPersistState;
     this.now = options.now || (() => new Date());
   }
 
   start(id: string) {
-    return this.execute(id, 'start');
+    return this.executeContainer(id, 'start');
   }
 
   stop(id: string) {
-    return this.execute(id, 'stop');
+    return this.executeContainer(id, 'stop');
   }
 
-  private async execute(id: string, action: ContainerAction): Promise<ContainerActionResponse> {
-    if (this.locks.has(id)) {
-      throw new OrchestrationError(409, 'ACTION_IN_PROGRESS', 'Another action is already in progress for this container');
-    }
-    this.locks.add(id);
-    try {
-      return await this.executeLocked(id, action);
-    } finally {
-      this.locks.delete(id);
-    }
+  startGroup(id: string) {
+    return this.executeGroup(id, 'start');
   }
 
-  private async executeLocked(id: string, action: ContainerAction): Promise<ContainerActionResponse> {
+  stopGroup(id: string) {
+    return this.executeGroup(id, 'stop');
+  }
+
+  private async executeContainer(id: string, action: ContainerAction): Promise<ContainerActionResponse> {
     const listed = await this.client.listContainers();
     const summary = selectCanonicalContainers(listed).find((item) => getContainerIdentity(item).id === id);
     if (!summary) throw new OrchestrationError(404, 'CONTAINER_NOT_FOUND', 'Container no longer exists');
+    const identity = getContainerIdentity(summary);
+    const groupId = identity.composeProject ? composeProjectGroupId(identity.composeProject) : null;
+    const release = this.acquireContainerLock(id, groupId);
+    try {
+      return await this.executeContainerSummary(summary, action);
+    } finally {
+      release();
+    }
+  }
 
+  private async executeGroup(id: string, action: ContainerAction): Promise<ContainerGroupActionResponse> {
+    const listed = await this.client.listContainers();
+    const containers = selectCanonicalContainers(listed)
+      .filter((item) => {
+        const project = getContainerIdentity(item).composeProject;
+        return project ? composeProjectGroupId(project) === id : false;
+      })
+      .sort((left, right) => {
+        const a = getContainerIdentity(left);
+        const b = getContainerIdentity(right);
+        return (a.composeService || '').localeCompare(b.composeService || '')
+          || (a.composeContainerNumber || 0) - (b.composeContainerNumber || 0)
+          || a.name.localeCompare(b.name);
+      });
+    if (!containers.length) throw new OrchestrationError(404, 'GROUP_NOT_FOUND', 'Docker Compose project no longer exists');
+
+    const identities = containers.map((container) => getContainerIdentity(container));
+    const project = identities[0].composeProject!;
+    const initialSubjects = containers.map((container, index) => ({
+      name: identities[index].name,
+      state: container.State,
+      health: null,
+      composeProject: project,
+    }));
+    const initialPermission = describeContainerGroupOrchestration(initialSubjects, this.policy);
+    if (initialPermission.protected) {
+      throw new OrchestrationError(403, 'CONTAINER_PROTECTED', 'DyRGateway projects are protected from orchestration');
+    }
+
+    const release = this.acquireGroupLock(id, identities.map((identity) => identity.id));
+    try {
+      const results = await mapWithConcurrency(containers, this.groupActionConcurrency, async (container) => {
+        try {
+          const response = await this.executeContainerSummary(container, action);
+          return this.toGroupResult(response);
+        } catch (error) {
+          return this.toFailedGroupResult(container, error);
+        }
+      });
+      const finalSubjects = results.map((result) => ({
+        name: result.name,
+        state: result.state,
+        health: result.health,
+        composeProject: project,
+      }));
+      return {
+        action,
+        changed: results.some((result) => result.status === 'changed'),
+        partial: results.some((result) => result.status === 'failed'),
+        completedAt: this.now().toISOString(),
+        group: {
+          id,
+          project,
+          summary: summarizeContainerGroup(finalSubjects),
+          orchestration: describeContainerGroupOrchestration(finalSubjects, this.policy),
+        },
+        results,
+      };
+    } finally {
+      release();
+    }
+  }
+
+  private acquireContainerLock(id: string, groupId: string | null) {
+    if (this.containerLocks.has(id) || (groupId && this.groupLocks.has(groupId))) {
+      throw new OrchestrationError(409, 'ACTION_IN_PROGRESS', 'Another action is already in progress for this container');
+    }
+    this.containerLocks.add(id);
+    return () => this.containerLocks.delete(id);
+  }
+
+  private acquireGroupLock(groupId: string, containerIds: string[]) {
+    if (this.groupLocks.has(groupId) || containerIds.some((id) => this.containerLocks.has(id))) {
+      throw new OrchestrationError(409, 'ACTION_IN_PROGRESS', 'Another action is already in progress for this Docker Compose project');
+    }
+    this.groupLocks.add(groupId);
+    containerIds.forEach((id) => this.containerLocks.add(id));
+    return () => {
+      this.groupLocks.delete(groupId);
+      containerIds.forEach((id) => this.containerLocks.delete(id));
+    };
+  }
+
+  private async executeContainerSummary(summary: DockerContainerSummary, action: ContainerAction): Promise<ContainerActionResponse> {
     const identity = getContainerIdentity(summary);
     const before = await this.client.inspectContainer(summary.Id);
     const previousState = String(before.State?.Status || summary.State || 'unknown').toLowerCase();
@@ -222,7 +322,7 @@ export default class OrchestrationService {
       state,
     }, this.policy);
 
-    await this.persistState(id, {
+    await this.persistState(identity.id, {
       instanceId,
       state,
       health,
@@ -233,8 +333,46 @@ export default class OrchestrationService {
       action,
       changed,
       completedAt: this.now().toISOString(),
-      container: { id, name: identity.name, instanceId, previousState, state, health },
+      container: { id: identity.id, name: identity.name, instanceId, previousState, state, health },
       orchestration,
+    };
+  }
+
+  private toGroupResult(response: ContainerActionResponse): ContainerGroupActionResult {
+    return {
+      containerId: response.container.id,
+      name: response.container.name,
+      instanceId: response.container.instanceId,
+      previousState: response.container.previousState,
+      state: response.container.state,
+      health: response.container.health,
+      status: response.changed ? 'changed' : 'unchanged',
+      orchestration: response.orchestration,
+      error: null,
+    };
+  }
+
+  private toFailedGroupResult(summary: DockerContainerSummary, error: unknown): ContainerGroupActionResult {
+    const identity = getContainerIdentity(summary);
+    const state = String(summary.State || 'unknown').toLowerCase();
+    const orchestration = describeContainerOrchestration({
+      name: identity.name,
+      composeProject: identity.composeProject,
+      state,
+    }, this.policy);
+    const mapped = error instanceof OrchestrationError
+      ? error
+      : new OrchestrationError(502, 'DOCKER_DAEMON_ERROR', 'Docker daemon rejected the operation');
+    return {
+      containerId: identity.id,
+      name: identity.name,
+      instanceId: summary.Id,
+      previousState: state,
+      state,
+      health: null,
+      status: 'failed',
+      orchestration,
+      error: { code: mapped.code, message: mapped.message },
     };
   }
 }
