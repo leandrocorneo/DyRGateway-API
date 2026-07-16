@@ -9,6 +9,7 @@ import {
   DockerContainerSummary,
   getContainerIdentity,
 } from '../../../src/monitoring/core/container';
+import { composeProjectGroupId } from '../../../src/modules/orchestration/orchestration.types';
 
 const policy = { protectedProjects: ['dyrgatewayapi', 'dyrgateway'], protectedContainerNames: ['next-app'] };
 
@@ -24,11 +25,12 @@ const summary = (overrides: Partial<DockerContainerSummary> = {}): DockerContain
 
 const serviceFor = (
   client: DockerControlClient,
-  options: { stopTimeoutSeconds?: number; persistState?: (id: string, state: any) => Promise<void> } = {},
+  options: { stopTimeoutSeconds?: number; groupActionConcurrency?: number; persistState?: (id: string, state: any) => Promise<void> } = {},
 ) => new OrchestrationService({
   client,
   policy,
   stopTimeoutSeconds: options.stopTimeoutSeconds ?? 10,
+  groupActionConcurrency: options.groupActionConcurrency ?? 2,
   persistState: options.persistState || (async () => undefined),
   now: () => new Date('2026-07-15T12:00:00.000Z'),
 });
@@ -142,15 +144,18 @@ test('rejects concurrent actions for the same logical container', async () => {
   const container = summary();
   const id = getContainerIdentity(container).id;
   let release: (() => void) | undefined;
+  let started: (() => void) | undefined;
   const pending = new Promise<void>((resolve) => { release = resolve; });
+  const inspectionStarted = new Promise<void>((resolve) => { started = resolve; });
   const client: DockerControlClient = {
-    listContainers: async () => { await pending; return [container]; },
-    inspectContainer: async () => ({ Id: container.Id, State: { Status: 'exited' } }),
+    listContainers: async () => [container],
+    inspectContainer: async () => { started?.(); await pending; return { Id: container.Id, State: { Status: 'exited' } }; },
     startContainer: async () => false,
     stopContainer: async () => false,
   };
   const service = serviceFor(client);
   const first = service.start(id);
+  await inspectionStarted;
 
   await assert.rejects(
     service.stop(id),
@@ -159,7 +164,6 @@ test('rejects concurrent actions for the same logical container', async () => {
   release?.();
   await first;
 });
-
 test('does not fail a completed Docker action when persistence is unavailable', async () => {
   const container = summary();
   const id = getContainerIdentity(container).id;
@@ -180,4 +184,143 @@ test('does not fail a completed Docker action when persistence is unavailable', 
 
   assert.equal(result.changed, true);
   assert.equal(result.container.state, 'running');
+});
+
+const composeSummary = (project: string, service: string, state: string, id: string) => summary({
+  Id: id,
+  Names: [`/${project}-${service}-1`],
+  State: state,
+  Labels: {
+    'com.docker.compose.project': project,
+    'com.docker.compose.service': service,
+    'com.docker.compose.container-number': '1',
+  },
+});
+
+test('starts every existing stopped container in a Compose project', async () => {
+  const app = composeSummary('external-project', 'app', 'exited', 'app-instance');
+  const database = composeSummary('external-project', 'database', 'created', 'database-instance');
+  const states = new Map([[app.Id, app.State], [database.Id, database.State]]);
+  const client: DockerControlClient = {
+    listContainers: async () => [app, database],
+    inspectContainer: async (id) => ({ Id: id, State: { Status: states.get(id) } }),
+    startContainer: async (id) => { states.set(id, 'running'); return true; },
+    stopContainer: async () => true,
+  };
+
+  const result = await serviceFor(client).startGroup(composeProjectGroupId('external-project'));
+
+  assert.equal(result.changed, true);
+  assert.equal(result.partial, false);
+  assert.equal(result.group.summary.running, 2);
+  assert.equal(result.results.every((item) => item.status === 'changed'), true);
+});
+
+test('stops running containers and leaves stopped containers unchanged', async () => {
+  const app = composeSummary('external-project', 'app', 'running', 'app-instance');
+  const database = composeSummary('external-project', 'database', 'exited', 'database-instance');
+  const states = new Map([[app.Id, app.State], [database.Id, database.State]]);
+  let stopCalls = 0;
+  const client: DockerControlClient = {
+    listContainers: async () => [app, database],
+    inspectContainer: async (id) => ({ Id: id, State: { Status: states.get(id) } }),
+    startContainer: async () => true,
+    stopContainer: async (id) => {
+      stopCalls += 1;
+      states.set(id, 'exited');
+      return true;
+    },
+  };
+
+  const result = await serviceFor(client).stopGroup(composeProjectGroupId('external-project'));
+
+  assert.equal(result.changed, true);
+  assert.equal(result.partial, false);
+  assert.equal(result.group.summary.stopped, 2);
+  assert.equal(stopCalls, 1);
+  assert.equal(result.results.find((item) => item.name.includes('app'))?.status, 'changed');
+  assert.equal(result.results.find((item) => item.name.includes('database'))?.status, 'unchanged');
+});
+test('continues a group action and reports unsupported containers as partial failures', async () => {
+  const app = composeSummary('external-project', 'app', 'exited', 'app-instance');
+  const paused = composeSummary('external-project', 'worker', 'paused', 'worker-instance');
+  const states = new Map([[app.Id, app.State], [paused.Id, paused.State]]);
+  const client: DockerControlClient = {
+    listContainers: async () => [app, paused],
+    inspectContainer: async (id) => ({ Id: id, State: { Status: states.get(id) } }),
+    startContainer: async (id) => { states.set(id, 'running'); return true; },
+    stopContainer: async () => true,
+  };
+
+  const result = await serviceFor(client).startGroup(composeProjectGroupId('external-project'));
+
+  assert.equal(result.changed, true);
+  assert.equal(result.partial, true);
+  assert.equal(result.results.find((item) => item.name.includes('app'))?.status, 'changed');
+  assert.equal(result.results.find((item) => item.name.includes('worker'))?.error?.code, 'UNSUPPORTED_CONTAINER_STATE');
+});
+
+test('protects the entire Compose project before changing any child', async () => {
+  const gateway = composeSummary('dyrgatewayapi', 'gateway', 'running', 'gateway-instance');
+  let actions = 0;
+  const client: DockerControlClient = {
+    listContainers: async () => [gateway],
+    inspectContainer: async () => ({ Id: gateway.Id, State: { Status: 'running' } }),
+    startContainer: async () => { actions += 1; return true; },
+    stopContainer: async () => { actions += 1; return true; },
+  };
+
+  await assert.rejects(
+    serviceFor(client).stopGroup(composeProjectGroupId('dyrgatewayapi')),
+    (error: OrchestrationError) => error.statusCode === 403 && error.code === 'CONTAINER_PROTECTED',
+  );
+  assert.equal(actions, 0);
+});
+
+test('blocks individual actions while the Compose project is being operated', async () => {
+  const app = composeSummary('external-project', 'app', 'exited', 'app-instance');
+  let release: (() => void) | undefined;
+  let started: (() => void) | undefined;
+  const pending = new Promise<void>((resolve) => { release = resolve; });
+  const inspectionStarted = new Promise<void>((resolve) => { started = resolve; });
+  const client: DockerControlClient = {
+    listContainers: async () => [app],
+    inspectContainer: async () => { started?.(); await pending; return { Id: app.Id, State: { Status: 'exited' } }; },
+    startContainer: async () => false,
+    stopContainer: async () => false,
+  };
+  const service = serviceFor(client, { groupActionConcurrency: 1 });
+  const groupAction = service.startGroup(composeProjectGroupId('external-project'));
+  await inspectionStarted;
+
+  await assert.rejects(
+    service.start(getContainerIdentity(app).id),
+    (error: OrchestrationError) => error.statusCode === 409 && error.code === 'ACTION_IN_PROGRESS',
+  );
+  release?.();
+  await groupAction;
+});
+
+test('blocks project actions while a child container is being operated', async () => {
+  const app = composeSummary('external-project', 'app', 'exited', 'app-instance');
+  let release: (() => void) | undefined;
+  let started: (() => void) | undefined;
+  const pending = new Promise<void>((resolve) => { release = resolve; });
+  const inspectionStarted = new Promise<void>((resolve) => { started = resolve; });
+  const client: DockerControlClient = {
+    listContainers: async () => [app],
+    inspectContainer: async () => { started?.(); await pending; return { Id: app.Id, State: { Status: 'exited' } }; },
+    startContainer: async () => false,
+    stopContainer: async () => false,
+  };
+  const service = serviceFor(client, { groupActionConcurrency: 1 });
+  const childAction = service.start(getContainerIdentity(app).id);
+  await inspectionStarted;
+
+  await assert.rejects(
+    service.startGroup(composeProjectGroupId('external-project')),
+    (error: OrchestrationError) => error.statusCode === 409 && error.code === 'ACTION_IN_PROGRESS',
+  );
+  release?.();
+  await childAction;
 });

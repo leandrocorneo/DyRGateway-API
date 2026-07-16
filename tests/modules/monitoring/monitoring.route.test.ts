@@ -19,6 +19,34 @@ test('protects the container catalog with authentication', async () => {
   await app.close();
 });
 
+test('returns a paginated catalog grouped by Compose project', async () => {
+  const app = await buildApp(true);
+  const invalid = await app.inject({ method: 'GET', url: '/monitoring/container-groups?take=51' });
+  assert.equal(invalid.statusCode, 400);
+  const response = await app.inject({ method: 'GET', url: '/monitoring/container-groups?state=all&take=10' });
+  assert.equal(response.statusCode, 200);
+  const payload = response.json();
+  assert.equal(payload.meta.filters.state, 'all');
+  assert.equal(payload.meta.pagination.take, 10);
+  assert.equal(Array.isArray(payload.items), true);
+  assert.equal(typeof payload.summary.projects, 'number');
+  const compose = payload.items.find((item: any) => item.kind === 'compose');
+  if (compose) {
+    assert.equal(Array.isArray(compose.containers), true);
+    assert.equal(typeof compose.orchestration.protected, 'boolean');
+    assert.equal(compose.summary.total, compose.containers.length);
+  }
+  const running = await app.inject({ method: 'GET', url: '/monitoring/container-groups?state=running' });
+  assert.equal(running.json().items.every((item: any) => item.kind === 'compose'
+    ? item.summary.running > 0
+    : item.container.state === 'running'), true);
+  const stopped = await app.inject({ method: 'GET', url: '/monitoring/container-groups?state=stopped' });
+  assert.equal(stopped.json().items.every((item: any) => item.kind === 'compose'
+    ? item.summary.stopped > 0
+    : item.container.state !== 'running'), true);
+  await app.close();
+});
+
 test('validates catalog pagination and returns its contract', async () => {
   const app = await buildApp(true);
   const invalid = await app.inject({ method: 'GET', url: '/monitoring/containers?take=101' });

@@ -76,3 +76,33 @@ test('maps orchestration failures without exposing Docker responses', async () =
     await app.close();
   }
 });
+
+test('returns the group action contract without accepting a request body', async () => {
+  const groupResponse = {
+    action: 'start', changed: true, partial: false, completedAt: response.completedAt,
+    group: {
+      id, project: 'external-project',
+      summary: { total: 1, running: 1, stopped: 0, healthy: 0, unhealthy: 0, unknown: 1 },
+      orchestration: response.orchestration,
+    },
+    results: [{
+      containerId: id, name: 'external', instanceId: 'instance', previousState: 'exited',
+      state: 'running', health: null, status: 'changed', orchestration: response.orchestration, error: null,
+    }],
+  };
+  const app = await buildApp(true, {
+    start: async () => response,
+    stop: async () => response,
+    startGroup: async () => groupResponse,
+    stopGroup: async () => groupResponse,
+  });
+  const result = await app.inject({ method: 'POST', url: '/monitoring/container-groups/' + id + '/start' });
+  assert.equal(result.statusCode, 200);
+  assert.equal(result.json().group.project, 'external-project');
+  assert.equal(result.json().results[0].status, 'changed');
+  const withBody = await app.inject({
+    method: 'POST', url: '/monitoring/container-groups/' + id + '/stop', payload: { force: true },
+  });
+  assert.equal(withBody.statusCode, 400);
+  await app.close();
+});

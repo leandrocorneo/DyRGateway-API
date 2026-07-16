@@ -1,6 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { describeContainerOrchestration } from '../../../src/modules/orchestration/orchestration.types';
+import {
+  composeProjectGroupId,
+  describeContainerGroupOrchestration,
+  describeContainerOrchestration,
+  summarizeContainerGroup,
+} from '../../../src/modules/orchestration/orchestration.types';
 
 const policy = {
   protectedProjects: ['dyrgatewayapi', 'dyrgateway'],
@@ -56,4 +61,31 @@ test('exposes only the action supported by the current Docker state', () => {
     canStop: false,
     reason: 'unsupported-state',
   });
+});
+
+test('keeps Compose group identity stable across project casing', () => {
+  assert.equal(composeProjectGroupId('External-Project'), composeProjectGroupId('external-project'));
+});
+
+test('summarizes partially running projects and exposes both actions', () => {
+  const containers = [
+    { name: 'app', state: 'running', health: 'healthy', composeProject: 'external' },
+    { name: 'worker', state: 'exited', health: null, composeProject: 'external' },
+  ];
+  assert.deepEqual(summarizeContainerGroup(containers), {
+    total: 2, running: 1, stopped: 1, healthy: 1, unhealthy: 0, unknown: 0,
+  });
+  assert.deepEqual(describeContainerGroupOrchestration(containers, policy), {
+    protected: false, canStart: true, canStop: true, reason: null,
+  });
+});
+
+test('protects a group when any child uses a protected fallback name', () => {
+  const result = describeContainerGroupOrchestration([
+    { name: 'external', state: 'running', composeProject: 'other' },
+    { name: 'next-app', state: 'running', composeProject: 'other' },
+  ], policy);
+  assert.equal(result.protected, true);
+  assert.equal(result.canStart, false);
+  assert.equal(result.canStop, false);
 });
