@@ -5,6 +5,7 @@ import {
   getContainerIdentity,
   mapWithConcurrency,
   normalizeContainerStatus,
+  normalizeDockerPorts,
   parseDockerDate,
   selectCanonicalContainers,
 } from '../core/container';
@@ -22,6 +23,7 @@ export type MonitoredContainerInput = {
   state: string;
   health: string | null;
   mounts: Array<{ name: string; destination: string }>;
+  ports: Array<{ containerPort: number; protocol: string; hostIp: string | null; hostPort: number | null; published: boolean }>;
   containerCreatedAt: string | null;
   instanceStartedAt: string | null;
   observedAt: string;
@@ -109,6 +111,7 @@ const collectContainer = async (
       state,
       health,
       mounts: volumeMounts,
+      ports: normalizeDockerPorts(summary.Ports),
       containerCreatedAt: containerCreatedAt?.toISOString() || null,
       instanceStartedAt: startedAt?.toISOString() || null,
       observedAt: observedAt.toISOString(),

@@ -29,6 +29,8 @@ export const config = {
     actionTimeoutMs: parseInt(process.env.DOCKER_ACTION_TIMEOUT_MS || '15000', 10),
     stopTimeoutSeconds: parseInt(process.env.DOCKER_STOP_TIMEOUT_SECONDS || '10', 10),
     groupActionConcurrency: parseInt(process.env.DOCKER_GROUP_ACTION_CONCURRENCY || '6', 10),
+    composeActionTimeoutMs: parseInt(process.env.DOCKER_COMPOSE_ACTION_TIMEOUT_MS || '120000', 10),
+    composeAllowedDirectories: csv(process.env.DOCKER_COMPOSE_ALLOWED_DIRECTORIES, ''),
     protectedProjects: csv(process.env.DOCKER_PROTECTED_PROJECTS, 'dyrgatewayapi,dyrgateway'),
     protectedContainerNames: csv(
       process.env.DOCKER_PROTECTED_CONTAINERS,

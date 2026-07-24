@@ -23,6 +23,9 @@ test('protects DyRGateway Compose projects case-insensitively', () => {
     protected: true,
     canStart: false,
     canStop: false,
+    canRestart: false,
+    canRebuild: false,
+    canRedeploy: false,
     reason: 'protected',
   });
 });
@@ -47,18 +50,27 @@ test('exposes only the action supported by the current Docker state', () => {
     protected: false,
     canStart: false,
     canStop: true,
+    canRestart: true,
+    canRebuild: false,
+    canRedeploy: false,
     reason: 'already-running',
   });
   assert.deepEqual(exited, {
     protected: false,
     canStart: true,
     canStop: false,
+    canRestart: false,
+    canRebuild: false,
+    canRedeploy: false,
     reason: 'already-stopped',
   });
   assert.deepEqual(paused, {
     protected: false,
     canStart: false,
     canStop: false,
+    canRestart: false,
+    canRebuild: false,
+    canRedeploy: false,
     reason: 'unsupported-state',
   });
 });
@@ -76,7 +88,7 @@ test('summarizes partially running projects and exposes both actions', () => {
     total: 2, running: 1, stopped: 1, healthy: 1, unhealthy: 0, unknown: 0,
   });
   assert.deepEqual(describeContainerGroupOrchestration(containers, policy), {
-    protected: false, canStart: true, canStop: true, reason: null,
+    protected: false, canStart: true, canStop: true, canRestart: true, canRebuild: false, canRedeploy: false, reason: null,
   });
 });
 

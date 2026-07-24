@@ -8,7 +8,8 @@ Este documento registra intenção de produto ainda não garantida pelos contrat
 - Listagem, edição e exclusão de usuários.
 - Logs centralizados e busca por request ID.
 - Integração Hostinger/VPS.
-- Gerenciamento completo de projetos Compose (up, pull, criação e recriação de serviços).
+- Criação assistida de novos projetos Compose e edição avançada de arquivos Compose.
+- Upload, armazenamento e renovação de certificados TLS pelo painel.
 - Teste de conectividade de serviço.
 - Listagem de service types.
 - Alertas e incidentes em tempo real.

@@ -7,6 +7,7 @@ import {
   getContainerIdentity,
   mapWithConcurrency,
   normalizeContainerStatus,
+  normalizeDockerPorts,
   selectCanonicalContainers,
 } from '../../../src/monitoring/core/container';
 
@@ -80,4 +81,15 @@ test('bounds asynchronous work to the configured concurrency', async () => {
   });
   assert.equal(maximum, 3);
   assert.deepEqual(results, [...Array(12).keys()].map((value) => value * 2));
+});
+
+
+test('normalizes Docker published and private ports', () => {
+  assert.deepEqual(normalizeDockerPorts([
+    { IP: '0.0.0.0', PrivatePort: 3000, PublicPort: 9101, Type: 'tcp' },
+    { PrivatePort: 8080, Type: 'udp' },
+  ]), [
+    { containerPort: 3000, protocol: 'tcp', hostIp: '0.0.0.0', hostPort: 9101, published: true },
+    { containerPort: 8080, protocol: 'udp', hostIp: null, hostPort: null, published: false },
+  ]);
 });

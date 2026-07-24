@@ -4,7 +4,7 @@
 
 Permitir que usuários autenticados iniciem ou parem containers externos existentes no Docker daemon, individualmente ou agrupados pelo projeto Docker Compose. Os projetos `dyrgatewayapi` e `dyrgateway`, além dos nomes de fallback configurados, permanecem protegidos.
 
-A API opera somente containers existentes. Ela não executa `docker compose up`, não recria serviços removidos e não acessa arquivos Compose.
+Start, stop e restart operam containers existentes. Rebuild e redeploy de projeto usam somente cadastros ativos de Compose, diretórios em allowlist e comandos fixos; o frontend nunca envia comandos livres.
 
 ## Segurança
 
@@ -14,7 +14,7 @@ O socket usa dois proxies internos, ambos com mount somente leitura e sem portas
 
 - `docker-proxy`: `CONTAINERS=1` e `POST=0` para listagem, inspect, stats e System DF.
 - `docker-control-proxy`: `CONTAINERS=0`, `POST=1`, `ALLOW_START=1` e `ALLOW_STOP=1`.
-- Restart, kill, pause, unpause, exec, create e delete permanecem bloqueados.
+- Kill, pause, unpause, exec, create e delete permanecem bloqueados no proxy Docker. Restart usa endpoint dedicado do proxy de controle quando habilitado.
 
 O worker participa somente da rede de leitura. O gateway participa das redes de leitura e controle. Nunca combine `CONTAINERS=1` e `POST=1` no mesmo proxy.
 
@@ -55,6 +55,7 @@ Cada grupo retorna UUID determinístico, nome do projeto, resumo de estados/heal
 
 - `POST /api/monitoring/containers/:id/start`
 - `POST /api/monitoring/containers/:id/stop`
+- `POST /api/monitoring/containers/:id/restart`
 
 Sem body. O `:id` é o UUID lógico do container. Start aceita `created`/`exited`; stop aceita `running` e usa o timeout configurado.
 
@@ -62,6 +63,9 @@ Sem body. O `:id` é o UUID lógico do container. Start aceita `created`/`exited
 
 - `POST /api/monitoring/container-groups/:id/start`
 - `POST /api/monitoring/container-groups/:id/stop`
+- `POST /api/monitoring/container-groups/:id/restart`
+- `POST /api/monitoring/container-groups/:id/rebuild`
+- `POST /api/monitoring/container-groups/:id/redeploy`
 
 Sem body. O `:id` é derivado do nome normalizado do projeto Compose. Antes da ação, a API lista o daemon, recalcula identidades e resolve todas as instâncias canônicas daquele projeto.
 

@@ -63,6 +63,7 @@ const containerMetadata = (container: any) => ({
   state: container.state,
   health: container.health,
   mounts: container.mounts,
+  ports: container.ports,
   containerCreatedAt: container.containerCreatedAt?.toISOString() || null,
   instanceStartedAt: container.instanceStartedAt?.toISOString() || null,
   firstSeenAt: container.firstSeenAt.toISOString(),
@@ -171,14 +172,18 @@ export default class MonitoringService {
       protectedProjects: config.docker.protectedProjects,
       protectedContainerNames: config.docker.protectedContainerNames,
     };
-    const containers = await prisma.monitoredContainer.findMany({
-      where: { present: true },
-      orderBy: [
-        { composeProject: 'asc' }, { composeService: 'asc' },
-        { composeContainerNumber: 'asc' }, { name: 'asc' }, { id: 'asc' },
-      ],
-      include: { samples: { orderBy: { sampledAt: 'desc' }, take: 1 } },
-    });
+    const [containers, composeOperations] = await Promise.all([
+      prisma.monitoredContainer.findMany({
+        where: { present: true },
+        orderBy: [
+          { composeProject: 'asc' }, { composeService: 'asc' },
+          { composeContainerNumber: 'asc' }, { name: 'asc' }, { id: 'asc' },
+        ],
+        include: { samples: { orderBy: { sampledAt: 'desc' }, take: 1 } },
+      }),
+      prisma.composeProjectOperation.findMany({ where: { active: true } }),
+    ]);
+    const operationByProject = new Map(composeOperations.map((item) => [item.project.toLowerCase(), item]));
     const composeGroups = new Map<string, typeof containers>();
     const standalone = [] as typeof containers;
     for (const container of containers) {
@@ -200,12 +205,20 @@ export default class MonitoringService {
         health: container.health,
         composeProject: project,
       }));
+      const baseOrchestration = describeContainerGroupOrchestration(subjects, policy);
+      const operation = operationByProject.get(project.toLowerCase());
       return {
         kind: 'compose' as const,
         id: composeProjectGroupId(project),
         project,
         summary: summarizeContainerGroup(subjects),
-        orchestration: describeContainerGroupOrchestration(subjects, policy),
+        orchestration: baseOrchestration.protected ? baseOrchestration : {
+          ...baseOrchestration,
+          canRestart: baseOrchestration.canRestart && Boolean(operation?.canRestart),
+          canRebuild: Boolean(operation?.canRebuild),
+          canRedeploy: Boolean(operation?.canRedeploy),
+          reason: baseOrchestration.reason === null && !operation ? 'operation-not-configured' as const : baseOrchestration.reason,
+        },
         containers: group.map((container) => ({
           ...containerMetadata(container),
           current: sampleSnapshot(container.samples[0]),

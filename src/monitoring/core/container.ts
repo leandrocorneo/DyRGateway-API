@@ -8,6 +8,22 @@ export type DockerContainerSummary = {
   State: string;
   Labels: Record<string, string>;
   SizeRw?: number;
+  Ports?: DockerContainerPort[];
+};
+
+export type DockerContainerPort = {
+  IP?: string;
+  PrivatePort: number;
+  PublicPort?: number;
+  Type: string;
+};
+
+export type ContainerPublishedPort = {
+  containerPort: number;
+  protocol: string;
+  hostIp: string | null;
+  hostPort: number | null;
+  published: boolean;
 };
 
 export type ContainerIdentity = {
@@ -68,6 +84,18 @@ export const selectCanonicalContainers = (containers: DockerContainerSummary[]) 
   }
   return [...selected.values()];
 };
+
+export const normalizeDockerPorts = (ports: DockerContainerPort[] | null | undefined): ContainerPublishedPort[] =>
+  (ports || [])
+    .filter((port) => Number.isInteger(Number(port.PrivatePort)) && String(port.Type || '').trim())
+    .map((port) => ({
+      containerPort: Number(port.PrivatePort),
+      protocol: String(port.Type).toLowerCase(),
+      hostIp: port.IP?.trim() || null,
+      hostPort: Number.isInteger(Number(port.PublicPort)) ? Number(port.PublicPort) : null,
+      published: Number.isInteger(Number(port.PublicPort)),
+    }))
+    .sort((left, right) => left.containerPort - right.containerPort || left.protocol.localeCompare(right.protocol) || String(left.hostPort || '').localeCompare(String(right.hostPort || '')));
 
 export const normalizeContainerStatus = (state: string | null | undefined, health: string | null | undefined) => {
   if (state !== 'running') return 'down';

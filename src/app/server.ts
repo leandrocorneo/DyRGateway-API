@@ -13,6 +13,7 @@ import userRoutes from '../modules/users/user.routes';
 import authRoutes from '../modules/auth/auth.routes';
 import monitoringRoutes from '../modules/monitoring/monitoring.route';
 import orchestrationRoutes from '../modules/orchestration/orchestration.route';
+import routingRoutes from '../modules/routing/routing.route';
 import { registerAuthGuard } from '../modules/auth/auth.guard';
 import { registerApiMetrics } from '../monitoring/fastify';
 import { flushApplicationMetrics, startMetricsFlushLoop } from '../monitoring/persistence/flush';
@@ -37,6 +38,7 @@ app.register(userRoutes, { prefix: '/api' });
 app.register(authRoutes, { prefix: '/api' });
 app.register(monitoringRoutes, { prefix: '/api' });
 app.register(orchestrationRoutes, { prefix: '/api' });
+app.register(routingRoutes, { prefix: '/api' });
 app.register(gatewayProxyRoutes);
 registerGatewayWebSocketProxy(app);
 

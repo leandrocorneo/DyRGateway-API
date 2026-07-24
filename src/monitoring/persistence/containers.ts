@@ -19,6 +19,7 @@ export const upsertMonitoredContainer = async (item: MonitoredContainerInput) =>
     health: item.health,
     present: true,
     mounts: json(item.mounts),
+    ports: json(item.ports),
     containerCreatedAt: item.containerCreatedAt ? new Date(item.containerCreatedAt) : null,
     instanceStartedAt: item.instanceStartedAt ? new Date(item.instanceStartedAt) : null,
     lastSeenAt: observedAt,

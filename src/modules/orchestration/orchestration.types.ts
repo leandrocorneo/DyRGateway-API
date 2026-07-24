@@ -5,14 +5,25 @@ export type ContainerOrchestrationReason =
   | 'already-running'
   | 'already-stopped'
   | 'unsupported-state'
+  | 'operation-not-configured'
   | null;
 
 export type ContainerOrchestration = {
   protected: boolean;
   canStart: boolean;
   canStop: boolean;
+  canRestart: boolean;
+  canRebuild: boolean;
+  canRedeploy: boolean;
   reason: ContainerOrchestrationReason;
 };
+
+const orchestration = (value: Omit<ContainerOrchestration, 'canRestart' | 'canRebuild' | 'canRedeploy'> & Partial<Pick<ContainerOrchestration, 'canRestart' | 'canRebuild' | 'canRedeploy'>>): ContainerOrchestration => ({
+  canRestart: false,
+  canRebuild: false,
+  canRedeploy: false,
+  ...value,
+});
 
 export type ContainerOrchestrationSubject = {
   name: string;
@@ -53,17 +64,17 @@ export const describeContainerOrchestration = (
   );
 
   if (protectedContainer) {
-    return { protected: true, canStart: false, canStop: false, reason: 'protected' };
+    return orchestration({ protected: true, canStart: false, canStop: false, reason: 'protected' });
   }
 
   const state = container.state.toLowerCase();
   if (state === 'running') {
-    return { protected: false, canStart: false, canStop: true, reason: 'already-running' };
+    return orchestration({ protected: false, canStart: false, canStop: true, canRestart: true, reason: 'already-running' });
   }
   if (state === 'created' || state === 'exited') {
-    return { protected: false, canStart: true, canStop: false, reason: 'already-stopped' };
+    return orchestration({ protected: false, canStart: true, canStop: false, reason: 'already-stopped' });
   }
-  return { protected: false, canStart: false, canStop: false, reason: 'unsupported-state' };
+  return orchestration({ protected: false, canStart: false, canStop: false, reason: 'unsupported-state' });
 };
 
 export const summarizeContainerGroup = (containers: ContainerOrchestrationSubject[]): ContainerGroupSummary => {
@@ -86,10 +97,11 @@ export const describeContainerGroupOrchestration = (
 ): ContainerOrchestration => {
   const permissions = containers.map((container) => describeContainerOrchestration(container, policy));
   if (permissions.some((permission) => permission.protected)) {
-    return { protected: true, canStart: false, canStop: false, reason: 'protected' };
+    return orchestration({ protected: true, canStart: false, canStop: false, reason: 'protected' });
   }
   const canStart = permissions.some((permission) => permission.canStart);
   const canStop = permissions.some((permission) => permission.canStop);
+  const canRestart = permissions.some((permission) => permission.canRestart);
   const reason: ContainerOrchestrationReason = canStart && canStop
     ? null
     : canStop
@@ -97,10 +109,10 @@ export const describeContainerGroupOrchestration = (
       : canStart
         ? 'already-stopped'
         : 'unsupported-state';
-  return { protected: false, canStart, canStop, reason };
+  return orchestration({ protected: false, canStart, canStop, canRestart, reason });
 };
 
-export type ContainerAction = 'start' | 'stop';
+export type ContainerAction = 'start' | 'stop' | 'restart' | 'rebuild' | 'redeploy';
 
 export type ContainerActionResponse = {
   action: ContainerAction;

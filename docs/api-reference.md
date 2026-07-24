@@ -34,6 +34,8 @@ Base local: `http://localhost:9000/api`.
 
 - `GET /services?skip&take`
 - `GET /services/:id`
+- `GET /routing/overview`
+- `PUT /routing/preferences/:serviceId` com `{ "containerId": string | null }`
 - `POST /services` com `{ applicationId, serviceTypeId, path, targetHost, targetPort, active? }`
 - `PUT /services/:id` com os mesmos campos opcionais.
 - `DELETE /services/:id`
@@ -45,6 +47,11 @@ Não existe endpoint de listagem de `ServiceType`. O ID HTTP seedado é `0000000
 - `POST /users` com `{ email, password, active? }`, autenticado.
 
 Não existem listagem, edição, exclusão ou recuperação de senha.
+
+## Visão de roteamento
+
+- `GET /routing/overview`: autenticado; retorna domínio, aplicação, serviço, target, container sugerido por `targetHost/targetPort`, preferência visual salva, portas Docker e diagnóstico TLS para hosts sob `bellaflor.site`.
+- `PUT /routing/preferences/:serviceId`: autenticado; salva `{ "containerId": string }` como preferência visual ou remove com `{ "containerId": null }`. Não altera o roteamento real do gateway.
 
 ## Resolução do gateway
 
@@ -67,8 +74,16 @@ Todos os endpoints abaixo são autenticados:
 - `GET /monitoring/container-groups`
 - `POST /monitoring/container-groups/:id/start`
 - `POST /monitoring/container-groups/:id/stop`
+- `POST /monitoring/container-groups/:id/restart`
+- `POST /monitoring/container-groups/:id/rebuild`
+- `POST /monitoring/container-groups/:id/redeploy`
+- `GET /monitoring/compose-projects`
+- `POST /monitoring/compose-projects`
+- `PUT /monitoring/compose-projects/:id`
+- `DELETE /monitoring/compose-projects/:id`
 - `POST /monitoring/containers/:id/start`
 - `POST /monitoring/containers/:id/stop`
+- `POST /monitoring/containers/:id/restart`
 
 Os endpoints de API, Redis e banco mantêm o contrato comum com `meta`, `current`, `summary`, `series` e `breakdown`. Ranges aceitos: `15m`, `1h`, `6h`, `24h`, `7d` e `15d`; o default é `1h`.
 
@@ -82,7 +97,7 @@ Os endpoints de API, Redis e banco mantêm o contrato comum com `meta`, `current
 - `skip`: inteiro não negativo; default `0`.
 - `take`: inteiro de 1 a 100; default `25`.
 
-A resposta contém `meta.generatedAt`, filtros, paginação, `summary` e `items`. Cada item expõe somente identidade, metadados Compose permitidos, estado, última amostra e `orchestration` com `protected`, `canStart`, `canStop` e `reason`. Labels, comandos, variáveis e configurações completas do Docker não são retornados.
+A resposta contém `meta.generatedAt`, filtros, paginação, `summary` e `items`. Cada item expõe somente identidade, metadados Compose permitidos, portas Docker normalizadas, estado, última amostra e `orchestration` com `protected`, `canStart`, `canStop`, `canRestart`, `canRebuild`, `canRedeploy` e `reason`. Labels, comandos, variáveis e configurações completas do Docker não são retornados.
 
 `stopped` agrupa todo container existente cujo estado não seja `running`. Containers removidos deixam o catálogo. O parâmetro legado `container` não é aceito.
 
@@ -108,7 +123,7 @@ Containers removidos retornam `404`. O objeto `container` também inclui as perm
 
 ### Orquestração de containers
 
-`POST /monitoring/containers/:id/start` inicia containers externos nos estados `created` ou `exited`. `POST /monitoring/containers/:id/stop` para containers externos em `running` com timeout gracioso configurado no servidor. As duas rotas não aceitam body e resolvem o UUID lógico diretamente no daemon antes da ação.
+`POST /monitoring/containers/:id/start` inicia containers externos nos estados `created` ou `exited`. `POST /monitoring/containers/:id/stop` para containers externos em `running` com timeout gracioso configurado no servidor. `POST /monitoring/containers/:id/restart` reinicia containers externos em `running`. As duas rotas não aceitam body e resolvem o UUID lógico diretamente no daemon antes da ação.
 
 Containers da stack DyRGateway retornam `403`. Containers removidos retornam `404`; estado incompatível ou ação concorrente retorna `409`; falha do Docker retorna `502`; timeout retorna `504`. A resposta `200` contém `action`, `changed`, `completedAt`, estado anterior/atual, `instanceId` e permissões atualizadas.
 
