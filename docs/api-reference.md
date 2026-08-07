@@ -34,13 +34,14 @@ Base local: `http://localhost:9000/api`.
 
 - `GET /services?skip&take`
 - `GET /services/:id`
+- `GET /service-types`: retorna o catálogo ordenado de tipos como `{ id, description }[]`.
 - `GET /routing/overview`
 - `PUT /routing/preferences/:serviceId` com `{ "containerId": string | null }`
 - `POST /services` com `{ applicationId, serviceTypeId, path, targetHost, targetPort, active? }`
 - `PUT /services/:id` com os mesmos campos opcionais.
 - `DELETE /services/:id`
 
-Não existe endpoint de listagem de `ServiceType`. O ID HTTP seedado é `00000000-0000-0000-0000-000000000001`.
+O catálogo de `ServiceType` é somente leitura. O ID HTTP seedado é `00000000-0000-0000-0000-000000000001`.
 
 ## Users
 

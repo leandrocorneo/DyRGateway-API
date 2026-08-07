@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "tsx watch src/app/server.ts",
     "build": "tsc",
-    "test": "tsx --test tests/monitoring/core/*.test.ts tests/monitoring/collectors/*.test.ts tests/modules/monitoring/*.test.ts tests/modules/orchestration/*.test.ts tests/modules/routing/*.test.ts",
+    "test": "tsx --test tests/monitoring/core/*.test.ts tests/monitoring/collectors/*.test.ts tests/modules/monitoring/*.test.ts tests/modules/orchestration/*.test.ts tests/modules/routing/*.test.ts tests/modules/service-types/*.test.ts",
     "start": "node dist/app/server.js",
     "metrics:worker": "tsx watch src/monitoring/worker.ts",
     "prisma:generate": "prisma generate",
